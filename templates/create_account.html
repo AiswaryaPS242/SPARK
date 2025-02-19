@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Create Account</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="login-container">
+        <h2>Create New Account</h2>
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }}">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+        <form method="POST" action="{{ url_for('create_account') }}">
+            <div class="form-group">
+                <label for="username">Username:</label>
+                <input type="text" id="username" name="username" required>
+            </div>
+            <div class="form-group">
+                <label for="password">Password:</label>
+                <input type="password" id="password" name="password" required>
+            </div>
+            <div class="form-group">
+                <label for="semester">Which semester are you in?</label>
+                <select id="semester" name="semester" required>
+                    <option value="3">3rd Semester</option>
+                    <option value="4">4th Semester</option>
+                    <option value="5">5th Semester</option>
+                    <option value="6">6th Semester</option>
+                    <option value="7">7th Semester</option>
+                    <option value="8">8th Semester</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="exam_date">When is your next important exam?</label>
+                <input type="date" id="exam_date" name="exam_date" required>
+            </div>
+            <div class="form-group">
+                <label>Are you a morning/night person?</label>
+                <div>
+                    <input type="radio" id="morning" name="person_type" value="morning" required>
+                    <label for="morning">Morning</label>
+                </div>
+                <div>
+                    <input type="radio" id="night" name="person_type" value="night" required>
+                    <label for="night">Night</label>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Are you a fast or slow learner?</label>
+                <div>
+                    <input type="radio" id="fast" name="learner_type" value="fast" required>
+                    <label for="fast">Fast</label>
+                </div>
+                <div>
+                    <input type="radio" id="slow" name="learner_type" value="slow" required>
+                    <label for="slow">Slow</label>
+                </div>
+            </div>
+            <button type="submit">Create Account</button>
+        </form>
+        <p>Already have an account? <a href="{{ url_for('login') }}">Login here</a></p>
+    </div>
+</body>
+</html>
