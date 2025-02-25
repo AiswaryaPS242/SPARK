@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-datepicker/1.9.0/css/bootstrap-datepicker.min.css">
+</head>
+<body>
+    <div class="dashboard-container">
+        <h2>Welcome, {{ username }}!</h2>
+        <h3>You are in Semester {{ semester }}</h3>
+
+        <form method="POST" action="#">
+            {% for i in range(5) %}
+                <div class="form-group">
+                    <label for="subject{{ i+1 }}">Subject {{ i+1 }}:</label>
+                    <select id="subject{{ i+1 }}" name="subject{{ i+1 }}" required>
+                        <option value="">Select a subject</option>
+                        {% for subject in subjects %}
+                            <option value="{{ subject }}">{{ subject }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="module{{ i+1 }}">Select Module for Subject {{ i+1 }}:</label>
+                    <select id="module{{ i+1 }}" name="module{{ i+1 }}" required>
+                        <option value="">Select a module</option>
+                        {% for j in range(5) %}
+                            <option value="Module {{ j+1 }}">Module {{ j+1 }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            {% endfor %}
+
+            <div class="form-group">
+                <label for="examDate">Select Next Important Exam Date:</label>
+                <input type="text" id="examDate" name="examDate" class="datepicker" required>
+            </div>
+
+            <button type="submit">Save Selections</button>
+        </form>
+
+        <p><a href="{{ url_for('logout') }}">Logout</a></p>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-datepicker/1.9.0/js/bootstrap-datepicker.min.js"></script>
+    <script>
+        $(document).ready(function() {
+            $('.datepicker').datepicker({
+                format: 'yyyy-mm-dd',
+                autoclose: true,
+                todayHighlight: true
+            });
+        });
+    </script>
+</body>
+</html>
