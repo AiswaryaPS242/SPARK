@@ -17,7 +17,7 @@
             {% for i in range(5) %}
                 <div class="form-group">
                     <label for="subject{{ i+1 }}">Subject {{ i+1 }}:</label>
-                    <select id="subject{{ i+1 }}" name="subject{{ i+1 }}" required>
+                    <select id="subject{{ i+1 }}" name="subject{{ i+1 }}">
                         <option value="">Select a subject</option>
                         {% for subject in subjects %}
                             <option value="{{ subject }}">{{ subject }}</option>
@@ -25,20 +25,22 @@
                     </select>
                 </div>
 
-                <div class="form-group">
-                    <label for="module{{ i+1 }}">Select Module for Subject {{ i+1 }}:</label>
-                    <select id="module{{ i+1 }}" name="module{{ i+1 }}" required>
-                        <option value="">Select a module</option>
+                <div class="form-group module-group">
+                    <label>Modules for Subject {{ i+1 }}:</label>
+                    <div class="checkbox-group">
                         {% for j in range(5) %}
-                            <option value="Module {{ j+1 }}">Module {{ j+1 }}</option>
+                            <div class="checkbox-item">
+                                <input type="checkbox" id="module{{ i+1 }}_{{ j+1 }}" name="module{{ i+1 }}" value="Module {{ j+1 }}">
+                                <label for="module{{ i+1 }}_{{ j+1 }}">Module {{ j+1 }}</label>
+                            </div>
                         {% endfor %}
-                    </select>
+                    </div>
                 </div>
             {% endfor %}
 
             <div class="form-group">
                 <label for="examDate">Select Next Important Exam Date:</label>
-                <input type="text" id="examDate" name="examDate" class="datepicker" required>
+                <input type="text" id="examDate" name="examDate" class="datepicker">
             </div>
 
             <button type="submit">Save Selections</button>

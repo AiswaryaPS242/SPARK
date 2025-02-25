@@ -16,9 +16,26 @@ body {
     width: 300px;
 }
 
+.dashboard-container {
+    background-color: #fff;
+    padding: 25px;
+    border-radius: 5px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    width: 90%;
+    max-width: 800px;
+    max-height: 90vh;
+    overflow-y: auto;
+}
+
 h2 {
     text-align: center;
     margin-bottom: 20px;
+}
+
+h3 {
+    color: #444;
+    margin-bottom: 25px;
+    text-align: center;
 }
 
 .form-group {
@@ -28,14 +45,45 @@ h2 {
 label {
     display: block;
     margin-bottom: 5px;
+    font-weight: bold;
 }
 
-input {
+input, select {
     width: 100%;
     padding: 8px;
     box-sizing: border-box;
     border: 1px solid #ccc;
     border-radius: 4px;
+}
+
+/* Style for checkbox groups */
+.checkbox-group {
+    display: flex;
+    flex-wrap: wrap;
+    margin-top: 5px;
+}
+
+.checkbox-item {
+    margin-right: 15px;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+}
+
+.checkbox-item input[type="checkbox"] {
+    margin-right: 5px;
+    width: auto;
+}
+
+.checkbox-item label {
+    display: inline;
+    font-weight: normal;
+}
+
+.module-group {
+    margin-bottom: 20px;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 15px;
 }
 
 button {
@@ -46,6 +94,7 @@ button {
     border: none;
     border-radius: 4px;
     cursor: pointer;
+    margin-top: 10px;
 }
 
 button:hover {
@@ -66,4 +115,35 @@ button:hover {
 .alert-error {
     background-color: #f8d7da;
     color: #721c24;
+}
+
+/* Adjust body for dashboard */
+body:has(.dashboard-container) {
+    align-items: flex-start;
+    padding-top: 20px;
+    padding-bottom: 20px;
+    height: auto;
+    min-height: 100vh;
+}
+
+/* Datepicker styling */
+.datepicker {
+    background: #fff;
+    cursor: pointer;
+}
+
+/* Links styling */
+a {
+    color: #007bff;
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+/* Logout link */
+.dashboard-container p {
+    text-align: center;
+    margin-top: 25px;
 }
