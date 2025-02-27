@@ -1,18 +1,18 @@
-# Import necessary libraries
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime
+from datetime import datetime, timedelta
 from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
-app.secret_key = 'your_secret_key'  # Required for session management and flashing messages
+app.secret_key = 'your_secret_key'  # Change this for production security
 
-# Configure SQLAlchemy
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///spark.db'
+# PostgreSQL Configuration
+app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://postgres:postgre20@localhost/spark'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
 db = SQLAlchemy(app)
 
-# Define database models
+# Database Models
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
@@ -22,8 +22,6 @@ class User(db.Model):
     learner_type = db.Column(db.String(20), nullable=False)  # 'fast' or 'slow'
     date_created = db.Column(db.DateTime, default=datetime.utcnow)
     is_admin = db.Column(db.Boolean, default=False)
-   
-    # Relationships
     selected_subjects = db.relationship('SelectedSubject', backref='user', lazy=True)
     exam_dates = db.relationship('ExamDate', backref='user', lazy=True)
 
@@ -32,8 +30,6 @@ class Subject(db.Model):
     name = db.Column(db.String(200), nullable=False)
     semester = db.Column(db.Integer, nullable=False)
     code = db.Column(db.String(20), nullable=True)
-   
-    # Relationships
     selected_by = db.relationship('SelectedSubject', backref='subject', lazy=True)
     modules = db.relationship('Module', backref='subject', lazy=True)
 
@@ -41,8 +37,6 @@ class Module(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
     subject_id = db.Column(db.Integer, db.ForeignKey('subject.id'), nullable=False)
-   
-    # Relationships
     completed_by = db.relationship('CompletedModule', backref='module', lazy=True)
 
 class SelectedSubject(db.Model):
@@ -64,6 +58,17 @@ class ExamDate(db.Model):
     exam_date = db.Column(db.Date, nullable=False)
     description = db.Column(db.String(200), nullable=True)
 
+class Task(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    title = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    due_date = db.Column(db.Date, nullable=True)
+    is_completed = db.Column(db.Boolean, default=False)
+    date_created = db.Column(db.DateTime, default=datetime.utcnow)
+    user = db.relationship('User', backref='tasks')
+
+
 # Create database tables and populate with initial data
 def init_db():
     with app.app_context():
@@ -82,16 +87,16 @@ def init_db():
                 ],
                 # ... (Include all other semesters from your original code)
                 4: [
-                    "MAT256: PROBABILITY AND STATISTICAL MODELLING",
-                    "CST202: COMPUTER ORGANISATION AND ARCHITECTURE",
+                    "MAT 256: PROBABILITY AND STATISTICAL MODELLING",
+                    "CST 202: COMPUTER ORGANISATION AND ARCHITECTURE",
                     "CST 204: DATABASE MANAGEMENT SYSTEMS",
                     "CST 206: OPERATING SYSTEMS"
                 ],
                 5: [
-                    "ADT301 FOUNDATIONS OF DATA SCIENCE",
-                    "CST 303 COMPUTER NETWORKS",
-                    "AMT 305 INTRODUCTION TO MACHINE LEARNING",
-                    "AIT307 INTRODUCTION TO ARTIFICIAL INTELLIGENCE"
+                    "ADT 301: FOUNDATIONS OF DATA SCIENCE",
+                    "CST 303: COMPUTER NETWORKS",
+                    "AMT 305: INTRODUCTION TO MACHINE LEARNING",
+                    "AIT 307: INTRODUCTION TO ARTIFICIAL INTELLIGENCE"
                 ],
                 6: [
                     "ADT 302: Concepts in Big Data Analytics",
@@ -184,7 +189,7 @@ def init_db():
 
 # Modified routes to use the database
 @app.route('/')
-def home():
+def index():
     return redirect(url_for('login'))
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -206,7 +211,7 @@ def login():
             if user.is_admin:
                 return redirect(url_for('admin_dashboard'))
             else:
-                return redirect(url_for('dashboard'))
+                return redirect(url_for('home'))
         else:
             flash('Invalid username or password', 'error')
     return render_template('login.html')
@@ -242,37 +247,139 @@ def create_account():
         return redirect(url_for('login'))
     return render_template('create_account.html')
 
-@app.route('/dashboard')
-def dashboard():
+
+# Route for the Exam Date Selection Dashboard
+@app.route('/exam_dashboard')
+def exam_dashboard():
     if 'user_id' not in session:
-        flash('Please login to access the dashboard.', 'error')
+        flash('Please login to access the exam dashboard.', 'error')
         return redirect(url_for('login'))
 
     user_id = session['user_id']
     user = User.query.get(user_id)
-   
+
     if not user:
         session.clear()
         flash('User not found. Please login again.', 'error')
         return redirect(url_for('login'))
-   
+
     # Get subjects for user's semester
     subjects = Subject.query.filter_by(semester=user.semester).all()
-   
+
     # Get user's selected subjects
     selected_subjects = SelectedSubject.query.filter_by(user_id=user_id).all()
     selected_subject_ids = [s.subject_id for s in selected_subjects]
-   
+
     # Get user's exam dates
     exam_dates = ExamDate.query.filter_by(user_id=user_id).all()
-   
+
     return render_template(
-        'dashboard.html',
+        'exam_dashboard.html',
         username=user.username,
         semester=user.semester,
         subjects=subjects,
         selected_subject_ids=selected_subject_ids,
         exam_dates=exam_dates
+    )
+
+# Route for the To-Do List Page
+@app.route('/todo')
+def todo():
+    if 'user_id' not in session:
+        flash('Please login to access the to-do list.', 'error')
+        return redirect(url_for('login'))
+
+    user_id = session['user_id']
+    tasks = Task.query.filter_by(user_id=user_id).order_by(Task.due_date.asc()).all()
+
+    return render_template(
+        'todo.html',
+        username=session['username'],
+        tasks=tasks
+    )
+
+@app.route('/study_plan')
+def study_plan():
+    if 'user_id' not in session:
+        flash('Please login to view your study plan.', 'error')
+        return redirect(url_for('login'))
+
+    user_id = session['user_id']
+    user = User.query.get(user_id)
+
+    if not user:
+        session.clear()
+        flash('User not found. Please login again.', 'error')
+        return redirect(url_for('login'))
+
+    # Get the user's selected subjects and exam dates
+    selected_subjects = SelectedSubject.query.filter_by(user_id=user_id).all()
+    exam_dates = ExamDate.query.filter_by(user_id=user_id).all()
+
+    # Generate the study plan
+    study_plan = []
+    for exam in exam_dates:
+        subject = Subject.query.get(exam.subject_id)
+        modules = Module.query.filter_by(subject_id=exam.subject_id).all()
+
+        # Calculate the number of days available for study
+        days_available = (exam.exam_date - datetime.today().date()).days
+        if days_available <= 0:
+            flash(f'Exam for {subject.name} is overdue or today!', 'error')
+            continue
+
+        # Adjust workload based on learner type
+        modules_per_day = len(modules) // days_available
+        if user.learner_type == 'slow':
+            modules_per_day = max(1, modules_per_day - 1)  # Reduce workload for slow learners
+        elif user.learner_type == 'fast':
+            modules_per_day = min(modules_per_day + 1, len(modules))  # Increase workload for fast learners
+
+        # Assign modules to days
+        study_days = []
+        for day in range(days_available):
+            start_index = day * modules_per_day
+            end_index = start_index + modules_per_day
+            modules_for_day = modules[start_index:end_index]
+            study_days.append({
+                'date': (datetime.today() + timedelta(days=day)).date(),
+                'modules': [module.name for module in modules_for_day]
+            })
+
+        study_plan.append({
+            'subject': subject.name,
+            'exam_date': exam.exam_date,
+            'study_days': study_days
+        })
+
+    return render_template(
+        'study_plan.html',
+        username=user.username,
+        study_plan=study_plan
+    )
+
+# Route for the Home Page
+@app.route('/home')
+def home():
+    if 'user_id' not in session:
+        flash('Please login to access the home page.', 'error')
+        return redirect(url_for('login'))
+
+    user_id = session['user_id']
+    user = User.query.get(user_id)
+
+    if not user:
+        session.clear()
+        flash('User not found. Please login again.', 'error')
+        return redirect(url_for('login'))
+
+    # Get tasks (including study plan tasks)
+    tasks = Task.query.filter_by(user_id=user_id).order_by(Task.due_date.asc()).all()
+
+    return render_template(
+        'home.html',
+        username=user.username,
+        tasks=tasks
     )
 
 @app.route('/save_selections', methods=['POST'])
@@ -349,7 +456,7 @@ def save_selections():
    
     db.session.commit()
     flash('Your selections have been saved.', 'success')
-    return redirect(url_for('dashboard'))
+    return redirect(url_for('home'))
 
 @app.route('/admin_dashboard')
 def admin_dashboard():
@@ -366,6 +473,70 @@ def admin_dashboard():
         users=users,
         subjects=subjects
     )
+
+# Route to add a new task
+@app.route('/add_task', methods=['POST'])
+def add_task():
+    if 'user_id' not in session:
+        flash('Please login to add a task.', 'error')
+        return redirect(url_for('login'))
+
+    user_id = session['user_id']
+    title = request.form.get('title')
+    description = request.form.get('description')
+    due_date_str = request.form.get('due_date')
+
+    try:
+        due_date = datetime.strptime(due_date_str, '%Y-%m-%d').date() if due_date_str else None
+        new_task = Task(
+            user_id=user_id,
+            title=title,
+            description=description,
+            due_date=due_date
+        )
+        db.session.add(new_task)
+        db.session.commit()
+        flash('Task added successfully!', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash('An error occurred while adding the task.', 'error')
+        print(f"Error: {e}")
+
+    return redirect(url_for('todo'))
+
+# Route to mark a task as completed
+@app.route('/complete_task/<int:task_id>', methods=['POST'])
+def complete_task(task_id):
+    if 'user_id' not in session:
+        flash('Please login to complete a task.', 'error')
+        return redirect(url_for('login'))
+
+    task = Task.query.get(task_id)
+    if task and task.user_id == session['user_id']:
+        task.is_completed = True
+        db.session.commit()
+        flash('Task marked as completed!', 'success')
+    else:
+        flash('Task not found or you do not have permission.', 'error')
+
+    return redirect(url_for('home'))
+
+# Route to delete a task
+@app.route('/delete_task/<int:task_id>', methods=['POST'])
+def delete_task(task_id):
+    if 'user_id' not in session:
+        flash('Please login to delete a task.', 'error')
+        return redirect(url_for('login'))
+
+    task = Task.query.get(task_id)
+    if task and task.user_id == session['user_id']:
+        db.session.delete(task)
+        db.session.commit()
+        flash('Task deleted successfully!', 'success')
+    else:
+        flash('Task not found or you do not have permission.', 'error')
+
+    return redirect(url_for('home'))
 
 @app.route('/logout')
 def logout():

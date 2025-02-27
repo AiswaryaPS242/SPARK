@@ -141,6 +141,294 @@ button:hover {
     border-bottom: 1px solid #eee;
 }
 
+/* To-Do List Styles */
+.todo-list {
+    margin-top: 20px;
+    padding: 20px;
+    background: #f9f9f9;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.todo-list h3 {
+    margin-bottom: 20px;
+    font-size: 1.5em;
+    color: #333;
+}
+
+.todo-list .form-group {
+    margin-bottom: 15px;
+}
+
+.todo-list .form-group label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: bold;
+}
+
+.todo-list .form-group input,
+.todo-list .form-group textarea {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 1em;
+}
+
+.todo-list .tasks {
+    margin-top: 20px;
+}
+
+.todo-list .task {
+    padding: 15px;
+    margin-bottom: 10px;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    position: relative;
+}
+
+.todo-list .task.completed {
+    background: #e8f5e9;
+    border-color: #c8e6c9;
+}
+
+.todo-list .task h4 {
+    margin: 0 0 10px;
+    font-size: 1.2em;
+    color: #333;
+}
+
+.todo-list .task p {
+    margin: 5px 0;
+    color: #555;
+}
+
+.todo-list .task .complete-btn,
+.todo-list .task .delete-btn {
+    padding: 5px 10px;
+    margin-right: 5px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9em;
+}
+
+.todo-list .task .complete-btn {
+    background: #4caf50;
+    color: #fff;
+}
+
+.todo-list .task .delete-btn {
+    background: #f44336;
+    color: #fff;
+}
+
+/* Study Plan Styles */
+.study-plan-container {
+    padding: 20px;
+}
+
+.subject-plan {
+    margin-bottom: 30px;
+    padding: 20px;
+    background: #f9f9f9;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.subject-plan h4 {
+    margin-bottom: 15px;
+    font-size: 1.3em;
+    color: #333;
+}
+
+.subject-plan table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.subject-plan th,
+.subject-plan td {
+    padding: 10px;
+    border: 1px solid #ddd;
+    text-align: left;
+}
+
+.subject-plan th {
+    background: #f1f1f1;
+    font-weight: bold;
+}
+
+.subject-plan ul {
+    margin: 0;
+    padding-left: 20px;
+}
+
+.subject-plan li {
+    list-style-type: disc;
+}
+
+/* App Container */
+.app-container {
+    display: flex;
+    min-height: 100vh;
+}
+
+/* Sidebar */
+.sidebar {
+    width: 250px;
+    background: #2c3e50;
+    color: #fff;
+    padding: 20px;
+}
+
+.sidebar h2 {
+    margin-bottom: 20px;
+    font-size: 1.5em;
+}
+
+.sidebar ul {
+    list-style: none;
+    padding: 0;
+}
+
+.sidebar ul li {
+    margin-bottom: 10px;
+}
+
+.sidebar ul li a {
+    color: #fff;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+}
+
+.sidebar ul li a i {
+    margin-right: 10px;
+}
+
+.sidebar ul li a:hover {
+    color: #1abc9c;
+}
+
+/* Main Content */
+.main-content {
+    flex: 1;
+    padding: 20px;
+    background: #ecf0f1;
+}
+
+/* Add Task Form */
+.add-task-form {
+    margin-bottom: 20px;
+    padding: 20px;
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.add-task-form .form-group {
+    margin-bottom: 15px;
+}
+
+.add-task-form .form-group label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: bold;
+}
+
+.add-task-form .form-group input,
+.add-task-form .form-group textarea {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 1em;
+}
+
+.add-task-form button {
+    padding: 10px 20px;
+    background: #1abc9c;
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.add-task-form button:hover {
+    background: #16a085;
+}
+
+/* Task List */
+.task-list {
+    margin-top: 20px;
+}
+
+.task {
+    padding: 15px;
+    margin-bottom: 10px;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    position: relative;
+}
+
+.task.completed {
+    background: #e8f5e9;
+    border-color: #c8e6c9;
+}
+
+.task h4 {
+    margin: 0 0 10px;
+    font-size: 1.2em;
+    color: #333;
+}
+
+.task p {
+    margin: 5px 0;
+    color: #555;
+}
+
+.task .complete-btn,
+.task .delete-btn {
+    padding: 5px 10px;
+    margin-right: 5px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9em;
+}
+
+.task .complete-btn {
+    background: #4caf50;
+    color: #fff;
+}
+
+.task .delete-btn {
+    background: #f44336;
+    color: #fff;
+}
+
+/* Navigation Bar */
+nav {
+    margin-bottom: 20px;
+    padding: 10px;
+    background: #f1f1f1;
+    border-radius: 8px;
+}
+
+nav a {
+    margin-right: 15px;
+    text-decoration: none;
+    color: #333;
+    font-weight: bold;
+}
+
+nav a:hover {
+    color: #007bff;
+}
+
 /* Responsive adjustments */
 @media (max-width: 768px) {
     .login-container, .dashboard-container {
