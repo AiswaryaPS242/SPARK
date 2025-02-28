@@ -24,6 +24,7 @@
             <h2>Welcome, {{ username }}!</h2>
             <h3>You are in Semester {{ semester }}</h3>
 
+            <!-- Flash Messages -->
             {% with messages = get_flashed_messages(with_categories=true) %}
                 {% if messages %}
                     {% for category, message in messages %}
@@ -34,39 +35,50 @@
                 {% endif %}
             {% endwith %}
 
+            <!-- Subject Selection Form -->
             <form method="POST" action="{{ url_for('save_selections') }}">
+                <h3>Select Subjects and Modules</h3>
+
+                <!-- Subject and Module Selection -->
                 {% for i in range(5) %}
-                    <div class="form-group">
-                        <label for="subject{{ i+1 }}">Subject {{ i+1 }}:</label>
-                        <select id="subject{{ i+1 }}" name="subject{{ i+1 }}">
-                            <option value="">Select a subject</option>
-                            {% for subject in subjects %}
-                                <option value="{{ subject.id }}" {% if subject.id in selected_subject_ids %}selected{% endif %}>
-                                    {% if subject.code %}{{ subject.code }}: {% endif %}{{ subject.name }}
-                                </option>
-                            {% endfor %}
-                        </select>
-                    </div>
-            
-                    <div class="form-group module-group">
-                        <label>Modules for Subject {{ i+1 }}:</label>
-                        <div class="checkbox-group">
-                            {% for j in range(5) %}
-                                <div class="checkbox-item">
-                                    <input type="checkbox" id="module{{ i+1 }}_{{ j+1 }}" name="module{{ i+1 }}_{{ j+1 }}" value="1">
-                                    <label for="module{{ i+1 }}_{{ j+1 }}">Module {{ j+1 }}</label>
-                                </div>
-                            {% endfor %}
+                    <div class="subject-group">
+                        <div class="form-group">
+                            <label for="subject{{ i+1 }}">Subject {{ i+1 }}:</label>
+                            <select id="subject{{ i+1 }}" name="subject{{ i+1 }}">
+                                <option value="">Select a subject</option>
+                                {% for subject in subjects %}
+                                    <option value="{{ subject.id }}" {% if subject.id in selected_subject_ids %}selected{% endif %}>
+                                        {% if subject.code %}{{ subject.code }}: {% endif %}{{ subject.name }}
+                                    </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <div class="form-group module-group">
+                            <label>Modules for Subject {{ i+1 }}:</label>
+                            <div class="checkbox-group">
+                                {% for j in range(5) %}
+                                    <div class="checkbox-item">
+                                        <input type="checkbox" id="module{{ i+1 }}_{{ j+1 }}" name="module{{ i+1 }}_{{ j+1 }}" value="1">
+                                        <label for="module{{ i+1 }}_{{ j+1 }}">Module {{ j+1 }}</label>
+                                    </div>
+                                {% endfor %}
+                            </div>
                         </div>
                     </div>
                 {% endfor %}
-            
+
+                <!-- Exam Date Selection -->
                 <div class="form-group">
                     <label for="examDate">Select Next Important Exam Date:</label>
-                    <input type="text" id="examDate" name="examDate" class="datepicker">
+                    <input type="date" id="examDate" name="examDate">
                 </div>
-            
-                <button type="submit">Save Selections</button>
+
+                <!-- Save and Generate Study Plan Buttons -->
+                <div class="form-group">
+                    <button type="submit">Save Selections</button>
+                    <a href="{{ url_for('study_plan') }}" class="btn-generate">Generate Study Plan</a>
+                </div>
             </form>
         </div>
     </div>
