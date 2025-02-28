@@ -2,6 +2,9 @@ from flask import Flask, render_template, request, redirect, url_for, flash, ses
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timedelta
 from werkzeug.security import generate_password_hash, check_password_hash
+import numpy as np
+import random
+from collections import defaultdict
 
 app = Flask(__name__)
 app.secret_key = 'your_secret_key'  # Change this for production security
@@ -11,6 +14,7 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://postgres:postgre20@localho
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
+
 
 # Database Models
 class User(db.Model):
@@ -67,6 +71,114 @@ class Task(db.Model):
     is_completed = db.Column(db.Boolean, default=False)
     date_created = db.Column(db.DateTime, default=datetime.utcnow)
     user = db.relationship('User', backref='tasks')
+
+# Reinforcement Learning Environment
+class StudyScheduleEnv:
+    def __init__(self, user, subjects, exam_dates):
+        self.user = user
+        self.subjects = subjects
+        self.exam_dates = exam_dates
+        self.modules = self._get_all_modules()
+        self.state_size = len(self.modules) + 2  # Modules + days_remaining + learner_type
+        self.action_size = len(self.modules)  # Each action corresponds to a module
+        self.reset()
+
+    def _get_all_modules(self):
+        modules = []
+        for subject in self.subjects:
+            modules.extend(subject.modules)
+        return modules
+
+    def reset(self):
+        self.current_progress = {module.id: False for module in self.modules}  # Track module completion
+        self.days_remaining = (self.exam_dates[0].exam_date - datetime.today().date()).days
+        self.state = self._get_state()
+        return self.state
+
+    def _get_state(self):
+        # State representation: [module_completion_status, days_remaining, learner_type]
+        module_status = [int(self.current_progress[module.id]) for module in self.modules]
+        learner_type = 0 if self.user.learner_type == 'slow' else 1
+        state = module_status + [self.days_remaining, learner_type]
+        return np.array(state)
+
+    def step(self, action):
+        module = self.modules[action]
+        reward = 0
+
+        # Mark module as completed
+        if not self.current_progress[module.id]:
+            self.current_progress[module.id] = True
+            reward += 10  # Positive reward for completing a module
+
+        # Check if all modules are completed
+        if all(self.current_progress.values()):
+            reward += 100  # Large reward for completing all modules
+            done = True
+        else:
+            done = False
+
+        # Penalize for each passing day
+        self.days_remaining -= 1
+        if self.days_remaining < 0:
+            reward -= 50  # Negative reward for missing the deadline
+            done = True
+
+        next_state = self._get_state()
+        return next_state, reward, done
+
+# Q-Learning Agent
+class QLearningAgent:
+    def __init__(self, state_size, action_size):
+        self.state_size = state_size
+        self.action_size = action_size
+        self.q_table = defaultdict(lambda: np.zeros(action_size))
+        self.learning_rate = 0.1
+        self.discount_factor = 0.99
+        self.epsilon = 1.0
+        self.epsilon_decay = 0.995
+        self.epsilon_min = 0.01
+
+    def get_action(self, state):
+        if np.random.rand() <= self.epsilon:
+            return random.randrange(self.action_size)
+        else:
+            return np.argmax(self.q_table[tuple(state)])
+
+    def update_q_table(self, state, action, reward, next_state, done):
+        state = tuple(state)
+        next_state = tuple(next_state)
+        q_value = self.q_table[state][action]
+        next_q_value = np.max(self.q_table[next_state])
+
+        # Update Q-value using Bellman equation
+        new_q_value = q_value + self.learning_rate * (reward + self.discount_factor * next_q_value - q_value)
+        self.q_table[state][action] = new_q_value
+
+        # Decay epsilon
+        if done:
+            self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
+
+# Train the RL Agent
+def train_rl_agent(user, subjects, exam_dates, episodes=1000):
+    env = StudyScheduleEnv(user, subjects, exam_dates)
+    agent = QLearningAgent(env.state_size, env.action_size)
+
+    for episode in range(episodes):
+        state = env.reset()
+        done = False
+        total_reward = 0
+
+        while not done:
+            action = agent.get_action(state)
+            next_state, reward, done = env.step(action)
+            agent.update_q_table(state, action, reward, next_state, done)
+            state = next_state
+            total_reward += reward
+
+        print(f"Episode: {episode + 1}, Total Reward: {total_reward}")
+
+    return agent
 
 
 # Create database tables and populate with initial data
@@ -298,66 +410,6 @@ def todo():
         tasks=tasks
     )
 
-@app.route('/study_plan')
-def study_plan():
-    if 'user_id' not in session:
-        flash('Please login to view your study plan.', 'error')
-        return redirect(url_for('login'))
-
-    user_id = session['user_id']
-    user = User.query.get(user_id)
-
-    if not user:
-        session.clear()
-        flash('User not found. Please login again.', 'error')
-        return redirect(url_for('login'))
-
-    # Get the user's selected subjects and exam dates
-    selected_subjects = SelectedSubject.query.filter_by(user_id=user_id).all()
-    exam_dates = ExamDate.query.filter_by(user_id=user_id).all()
-
-    # Generate the study plan
-    study_plan = []
-    for exam in exam_dates:
-        subject = Subject.query.get(exam.subject_id)
-        modules = Module.query.filter_by(subject_id=exam.subject_id).all()
-
-        # Calculate the number of days available for study
-        days_available = (exam.exam_date - datetime.today().date()).days
-        if days_available <= 0:
-            flash(f'Exam for {subject.name} is overdue or today!', 'error')
-            continue
-
-        # Adjust workload based on learner type
-        modules_per_day = len(modules) // days_available
-        if user.learner_type == 'slow':
-            modules_per_day = max(1, modules_per_day - 1)  # Reduce workload for slow learners
-        elif user.learner_type == 'fast':
-            modules_per_day = min(modules_per_day + 1, len(modules))  # Increase workload for fast learners
-
-        # Assign modules to days
-        study_days = []
-        for day in range(days_available):
-            start_index = day * modules_per_day
-            end_index = start_index + modules_per_day
-            modules_for_day = modules[start_index:end_index]
-            study_days.append({
-                'date': (datetime.today() + timedelta(days=day)).date(),
-                'modules': [module.name for module in modules_for_day]
-            })
-
-        study_plan.append({
-            'subject': subject.name,
-            'exam_date': exam.exam_date,
-            'study_days': study_days
-        })
-
-    return render_template(
-        'study_plan.html',
-        username=user.username,
-        study_plan=study_plan
-    )
-
 # Route for the Home Page
 @app.route('/home')
 def home():
@@ -367,111 +419,242 @@ def home():
 
     user_id = session['user_id']
     user = User.query.get(user_id)
-
     if not user:
         session.clear()
         flash('User not found. Please login again.', 'error')
         return redirect(url_for('login'))
 
-    # Get tasks (including study plan tasks)
+    # Get all tasks (including study plan tasks)
     tasks = Task.query.filter_by(user_id=user_id).order_by(Task.due_date.asc()).all()
+
+    # Debug: Print all tasks
+    print(f"All Tasks: {tasks}")
+
+    # Get study plan tasks (filter by tasks with titles starting with "Study")
+    study_plan_tasks = Task.query.filter(
+        Task.user_id == user_id,
+        Task.title.like("Study%")  # Filter tasks with titles starting with "Study"
+    ).order_by(Task.due_date.asc()).all()
+
+    # Debug: Print study plan tasks
+    print(f"Study Plan Tasks: {study_plan_tasks}")
 
     return render_template(
         'home.html',
         username=user.username,
-        tasks=tasks
+        tasks=tasks,
+        study_plan_tasks=study_plan_tasks
     )
+
+@app.route('/study_plan')
+def study_plan():
+    if 'user_id' not in session:
+        flash('Please login to view your study plan.', 'error')
+        return redirect(url_for('login'))
+
+    user_id = session['user_id']
+    user = User.query.get(user_id)
+    if not user:
+        session.clear()
+        flash('User not found. Please login again.', 'error')
+        return redirect(url_for('login'))
+
+    # Get the user's selected subjects and exam dates
+    selected_subjects = SelectedSubject.query.filter_by(user_id=user_id).all()
+    exam_dates = ExamDate.query.filter_by(user_id=user_id).all()
+
+    # Debug: Print selected subjects and exam dates
+    print(f"Selected Subjects: {selected_subjects}")
+    print(f"Exam Dates: {exam_dates}")
+
+    if not selected_subjects or not exam_dates:
+        flash('Please select subjects and exam dates first.', 'error')
+        return redirect(url_for('exam_dashboard'))
+
+    # Clear existing study plan tasks
+    Task.query.filter(
+        Task.user_id == user_id,
+        Task.title.like("Study%")  # Filter tasks with titles starting with "Study"
+    ).delete()
+
+    # Generate study schedule for selected modules of selected subjects
+    study_schedule = []
+    current_date = datetime.today().date()
+
+    for selected_subject in selected_subjects:
+        subject = Subject.query.get(selected_subject.subject_id)
+        if subject:
+            # Get the exam date for this subject
+            exam_date_record = next((ed for ed in exam_dates if ed.subject_id == subject.id), None)
+            exam_date = exam_date_record.exam_date if exam_date_record else (current_date + timedelta(days=30))
+
+            # Debug: Print subject and exam date
+            print(f"Subject: {subject.name}, Exam Date: {exam_date}")
+
+            # Get selected modules for this subject
+            selected_modules = (
+                db.session.query(Module)
+                .join(CompletedModule, CompletedModule.module_id == Module.id)
+                .filter(CompletedModule.user_id == user_id, Module.subject_id == subject.id)
+                .all()
+            )
+
+            # Debug: Print selected modules
+            print(f"Selected Modules for Subject {subject.name}: {[m.name for m in selected_modules]}")
+
+            # Generate study schedule for selected modules
+            for module in selected_modules:
+                # Debug: Print module info
+                print(f"Module: {module.name}, Subject: {subject.name}")
+
+                # Calculate days before exam for spacing
+                days_before_exam = (exam_date - current_date).days
+                days_per_module = max(1, days_before_exam // len(selected_modules)) if selected_modules else 1
+
+                # Add this module to the study schedule
+                study_date = current_date + timedelta(days=len(study_schedule))
+                # Ensure we're not scheduling too close to the exam
+                if (exam_date - study_date).days < 2:
+                    study_date = exam_date - timedelta(days=2)
+
+                study_schedule.append({
+                    'date': study_date,
+                    'module': module.name,
+                    'subject': subject.name,
+                    'subject_id': subject.id,
+                    'is_completed': False  # Since we're only adding incomplete modules
+                })
+
+    # Debug: Print study schedule
+    print(f"Study Schedule: {study_schedule}")
+
+    # Sort study schedule by date
+    study_schedule.sort(key=lambda x: x['date'])
+
+    # Add tasks to the database
+    for task in study_schedule:
+        # Calculate start and end times based on user preferences
+        if user.person_type == 'morning':
+            start_time = '08:00'
+            end_time = '10:00'
+        else:
+            start_time = '20:00'
+            end_time = '22:00'
+
+        # Adjust for slow learners
+        if user.learner_type == 'slow':
+            # Just for description purposes
+            adjusted_end_time = datetime.strptime(end_time, '%H:%M') + timedelta(hours=1)
+            end_time = adjusted_end_time.strftime('%H:%M')
+
+        # Add task to the database
+        new_task = Task(
+            user_id=user_id,
+            title=f"Study {task['subject']} - {task['module']}",
+            description=f"Complete {task['module']} for {task['subject']} ({start_time}-{end_time})",
+            due_date=task['date'],
+            is_completed=task['is_completed']  # Set completion status
+        )
+        db.session.add(new_task)
+
+        # Debug: Print added task
+        print(f"Added Task: {new_task.title}, Due Date: {new_task.due_date}")
+
+    db.session.commit()
+    flash('Study plan tasks have been added to your home page.', 'success')
+    return redirect(url_for('home'))
 
 @app.route('/save_selections', methods=['POST'])
 def save_selections():
     if 'user_id' not in session:
         flash('Please login to save your selections.', 'error')
         return redirect(url_for('login'))
-   
+
     user_id = session['user_id']
-   
+
+    # Debug: Print form data
+    print(f"Form Data: {request.form}")
+
     # Clear previous selections
     SelectedSubject.query.filter_by(user_id=user_id).delete()
-   
+    CompletedModule.query.filter_by(user_id=user_id).delete()
+    ExamDate.query.filter_by(user_id=user_id).delete()
+
     # Get selected subjects
+    selected_subject_ids = []
     for i in range(1, 6):  # Assuming 5 subject slots as in your HTML
         subject_id = request.form.get(f'subject{i}')
         if subject_id and subject_id != "":
+            selected_subject_ids.append(int(subject_id))
             selected_subject = SelectedSubject(
                 user_id=user_id,
-                subject_id=int(subject_id)
-            )
+                subject_id=int(subject_id))
             db.session.add(selected_subject)
-   
-    # Get completed modules
-    CompletedModule.query.filter_by(user_id=user_id).delete()
-    for key, value in request.form.items():
-        if key.startswith('module') and '_' in key:
-            parts = key.split('_')
-            subject_index = int(parts[0].replace('module', ''))
-            module_index = int(parts[1])
-           
-            subject_id = request.form.get(f'subject{subject_index}')
-            if subject_id and subject_id != "":
-                # Find the module in the database
-                subject = Subject.query.get(int(subject_id))
-                if subject:
-                    module = Module.query.filter_by(
-                        subject_id=subject.id,
-                        name=f"Module {module_index}"
-                    ).first()
-                   
+
+            # Save selected modules for this subject
+            for j in range(1, 6):  # Assuming 5 modules per subject
+                if request.form.get(f'module{i}_{j}') == '1':
+                    module = Module.query.filter_by(subject_id=subject_id, name=f"Module {j}").first()
                     if module:
                         completed_module = CompletedModule(
                             user_id=user_id,
-                            module_id=module.id
-                        )
+                            module_id=module.id)
                         db.session.add(completed_module)
-   
-    # Save exam date if provided
-    exam_date_str = request.form.get('examDate')
-    if exam_date_str:
-        try:
-            exam_date_obj = datetime.strptime(exam_date_str, '%Y-%m-%d').date()
-           
-            # Get the subject ID (assuming it's for the first selected subject)
-            subject_id = request.form.get('subject1')
-            if subject_id and subject_id != "":
-                # Delete existing exam date for this subject
-                ExamDate.query.filter_by(
-                    user_id=user_id,
-                    subject_id=int(subject_id)
-                ).delete()
-               
+
+    # Debug: Print selected subject IDs
+    print(f"Selected Subject IDs: {selected_subject_ids}")
+
+    # Process exam dates for each selected subject
+    for i, subject_id in enumerate(selected_subject_ids, 1):
+        exam_date_str = request.form.get(f'examDate{i}')
+        if exam_date_str:
+            try:
+                exam_date_obj = datetime.strptime(exam_date_str, '%Y-%m-%d').date()
+
                 # Add new exam date
                 exam_date = ExamDate(
                     user_id=user_id,
-                    subject_id=int(subject_id),
+                    subject_id=subject_id,
                     exam_date=exam_date_obj,
-                    description=f"Exam for {Subject.query.get(int(subject_id)).name}"
-                )
+                    description=f"Exam for {Subject.query.get(subject_id).name}")
                 db.session.add(exam_date)
-        except ValueError:
-            flash('Invalid date format. Please use YYYY-MM-DD.', 'error')
-   
+
+                # Debug: Print exam date
+                print(f"Exam Date for Subject {subject_id}: {exam_date_obj}")
+
+            except ValueError:
+                flash(f'Invalid date format for subject {i}. Please use YYYY-MM-DD.', 'error')
+
     db.session.commit()
-    flash('Your selections have been saved.', 'success')
-    return redirect(url_for('home'))
+    flash('Selections saved successfully!', 'success')
+    return redirect(url_for('study_plan'))
 
 @app.route('/admin_dashboard')
 def admin_dashboard():
-    if 'user_id' not in session or not session.get('is_admin', False):
-        flash('You do not have permission to access the admin dashboard.', 'error')
+    if 'user_id' not in session:
+        flash('Please login to access the admin dashboard.', 'error')
         return redirect(url_for('login'))
-   
-    users = User.query.filter_by(is_admin=False).all()
+
+    user_id = session['user_id']
+    user = User.query.get(user_id)
+    if not user or not user.is_admin:
+        flash('You do not have permission to access the admin dashboard.', 'error')
+        return redirect(url_for('home'))
+
+    # Fetch all users, subjects, and other relevant data
+    users = User.query.all()
     subjects = Subject.query.all()
-   
+    selected_subjects = SelectedSubject.query.all()
+    exam_dates = ExamDate.query.all()
+    tasks = Task.query.all()
+
     return render_template(
         'admin_dashboard.html',
-        username=session['username'],
         users=users,
-        subjects=subjects
+        subjects=subjects,
+        selected_subjects=selected_subjects,
+        exam_dates=exam_dates,
+        tasks=tasks
     )
 
 # Route to add a new task
@@ -514,8 +697,23 @@ def complete_task(task_id):
     task = Task.query.get(task_id)
     if task and task.user_id == session['user_id']:
         task.is_completed = True
+        task.date_completed = datetime.utcnow()
+
+        # Calculate completion time
+        completion_time = task.date_completed.time()
+        if task.due_date and task.due_date < datetime.utcnow().date():
+            flash('Task completed after the deadline!', 'warning')
+        else:
+            flash('Task marked as completed!', 'success')
+
+        # Adjust future tasks using RL
+        user = User.query.get(session['user_id'])
+        selected_subjects = SelectedSubject.query.filter_by(user_id=user.id).all()
+        exam_dates = ExamDate.query.filter_by(user_id=user.id).all()
+        subjects = [SelectedSubject.subject for SelectedSubject in selected_subjects]
+        agent = train_rl_agent(user, subjects, exam_dates)
+
         db.session.commit()
-        flash('Task marked as completed!', 'success')
     else:
         flash('Task not found or you do not have permission.', 'error')
 
@@ -543,6 +741,7 @@ def logout():
     session.clear()
     flash('You have been logged out.', 'success')
     return redirect(url_for('login'))
+
 
 if __name__ == '__main__':
     init_db()  # Initialize database

@@ -1,67 +1,30 @@
+<!-- study_plan.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Study Plan</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
 <body>
-    <div class="study-plan-container">
-        <h2>Welcome, {{ username }}!</h2>
-
-        <!-- Navigation -->
-        <nav>
-            <a href="{{ url_for('exam_dashboard') }}">Exam Dashboard</a>
-            <a href="{{ url_for('todo') }}">To-Do List</a>
-            <a href="{{ url_for('study_plan') }}">Study Plan</a>
-            <a href="{{ url_for('logout') }}">Logout</a>
-        </nav>
-
-        {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-                {% for category, message in messages %}
-                    <div class="alert alert-{{ category }}">
-                        {{ message }}
-                    </div>
-                {% endfor %}
-            {% endif %}
-        {% endwith %}
-
-        <h3>Your Personalized Study Plan</h3>
-
-        {% if study_plan %}
-            {% for plan in study_plan %}
-                <div class="subject-plan">
-                    <h4>{{ plan.subject }} (Exam on {{ plan.exam_date.strftime('%Y-%m-%d') }})</h4>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Date</th>
-                                <th>Modules to Study</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for day in plan.study_days %}
-                                <tr>
-                                    <td>{{ day.date.strftime('%Y-%m-%d') }}</td>
-                                    <td>
-                                        <ul>
-                                            {% for module in day.modules %}
-                                                <li>{{ module }}</li>
-                                            {% endfor %}
-                                        </ul>
-                                    </td>
-                                </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
+    <h1>Study Plan for {{ username }}</h1>
+    <table border="1">
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Subject</th>
+                <th>Module</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for task in study_plan %}
+            <tr>
+                <td>{{ task.date }}</td>
+                <td>{{ task.subject }}</td>
+                <td>{{ task.module }}</td>
+            </tr>
             {% endfor %}
-        {% else %}
-            <p>No study plan available. Please select subjects and exam dates on the Exam Dashboard.</p>
-        {% endif %}
-    </div>
+        </tbody>
+    </table>
 </body>
 </html>

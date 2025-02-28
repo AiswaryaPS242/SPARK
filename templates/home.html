@@ -23,6 +23,7 @@
         <div class="main-content">
             <h2>Welcome, {{ username }}!</h2>
 
+            <!-- Flash Messages -->
             {% with messages = get_flashed_messages(with_categories=true) %}
                 {% if messages %}
                     {% for category, message in messages %}
@@ -33,22 +34,67 @@
                 {% endif %}
             {% endwith %}
 
+            <!-- Regular Tasks -->
             <h3>Your Tasks</h3>
-            <ul>
-                {% for task in tasks %}
-                <li>
-                    <strong>{{ task.title }}</strong>
-                    <p>{{ task.description }}</p>
-                    <p>Due: {{ task.due_date.strftime('%Y-%m-%d') if task.due_date else 'No due date' }}</p>
-                    <form method="POST" action="{{ url_for('complete_task', task_id=task.id) }}" style="display: inline;">
-                        <button type="submit">Complete</button>
-                    </form>
-                    <form method="POST" action="{{ url_for('delete_task', task_id=task.id) }}" style="display: inline;">
-                        <button type="submit">Delete</button>
-                    </form>
-                </li>
-                {% endfor %}
-            </ul>
+            {% if tasks %}
+                <ul class="task-list">
+                    {% for task in tasks %}
+                        <li class="task-item">
+                            <div class="task-header">
+                                <strong>{{ task.title }}</strong>
+                                <span class="task-status {% if task.is_completed %}completed{% else %}pending{% endif %}">
+                                    {% if task.is_completed %}Completed{% else %}Pending{% endif %}
+                                </span>
+                            </div>
+                            <p>{{ task.description }}</p>
+                            <p>Due: {{ task.due_date.strftime('%Y-%m-%d') if task.due_date else 'No due date' }}</p>
+                            <div class="task-actions">
+                                {% if not task.is_completed %}
+                                    <form method="POST" action="{{ url_for('complete_task', task_id=task.id) }}" style="display: inline;">
+                                        <button type="submit" class="btn-complete">Complete</button>
+                                    </form>
+                                {% endif %}
+                                <form method="POST" action="{{ url_for('delete_task', task_id=task.id) }}" style="display: inline;">
+                                    <button type="submit" class="btn-delete">Delete</button>
+                                </form>
+                            </div>
+                        </li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <p>No tasks found.</p>
+            {% endif %}
+
+            <!-- Study Plan Tasks -->
+            <h3>Study Plan Tasks</h3>
+            {% if study_plan_tasks %}
+                <ul class="task-list">
+                    {% for task in study_plan_tasks %}
+                        <li class="task-item">
+                            <div class="task-header">
+                                <strong>{{ task.title }}</strong>
+                                <span class="task-status {% if task.is_completed %}completed{% else %}pending{% endif %}">
+                                    {% if task.is_completed %}Completed{% else %}Pending{% endif %}
+                                </span>
+                            </div>
+                            <p>{{ task.description }}</p>
+                            <p>Due: {{ task.due_date.strftime('%Y-%m-%d') if task.due_date else 'No due date' }}</p>
+                            <div class="task-actions">
+                                {% if not task.is_completed %}
+                                    <form method="POST" action="{{ url_for('complete_task', task_id=task.id) }}" style="display: inline;">
+                                        <button type="submit" class="btn-complete">Complete</button>
+                                    </form>
+                                {% endif %}
+                                <form method="POST" action="{{ url_for('delete_task', task_id=task.id) }}" style="display: inline;">
+                                    <button type="submit" class="btn-delete">Delete</button>
+                                </form>
+                            </div>
+                        </li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <p>No study plan tasks found. <a href="{{ url_for('exam_dashboard') }}" class="btn-create-plan">Go to Exam Dashboard</a> to create a study plan.</p>
+            {% endif %}
         </div>
     </div>
 </body>

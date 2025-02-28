@@ -5,72 +5,156 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Dashboard</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
 <body>
-    <div class="dashboard-container admin-dashboard">
-        <h2>Admin Dashboard</h2>
-        <h3>Welcome, {{ username }}!</h3>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <h2>SPARK</h2>
+            <ul>
+                <li><a href="{{ url_for('home') }}">Home</a></li>
+                <li><a href="{{ url_for('admin_dashboard') }}">Admin Dashboard</a></li>
+                <li><a href="{{ url_for('logout') }}">Logout</a></li>
+            </ul>
+        </div>
 
-        {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-                {% for category, message in messages %}
-                    <div class="alert alert-{{ category }}">
-                        {{ message }}
-                    </div>
-                {% endfor %}
-            {% endif %}
-        {% endwith %}
+        <!-- Main Content -->
+        <div class="main-content">
+            <h2>Welcome, {{ session['username'] }}!</h2>
+            <h3>Admin Dashboard</h3>
 
-        <div class="admin-section">
-            <h3>Registered Users</h3>
-            <table class="admin-table">
+            <!-- Flash Messages -->
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ category }}">
+                            {{ message }}
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+
+            <!-- List of Users -->
+            <h4>All Users</h4>
+            <table class="data-table">
                 <thead>
                     <tr>
+                        <th>ID</th>
                         <th>Username</th>
                         <th>Semester</th>
                         <th>Person Type</th>
                         <th>Learner Type</th>
-                        <th>Registration Date</th>
+                        <th>Is Admin</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for user in users %}
-                    <tr>
-                        <td>{{ user.username }}</td>
-                        <td>{{ user.semester }}</td>
-                        <td>{{ user.person_type }}</td>
-                        <td>{{ user.learner_type }}</td>
-                        <td>{{ user.date_created.strftime('%Y-%m-%d') }}</td>
-                    </tr>
+                        <tr>
+                            <td>{{ user.id }}</td>
+                            <td>{{ user.username }}</td>
+                            <td>{{ user.semester }}</td>
+                            <td>{{ user.person_type }}</td>
+                            <td>{{ user.learner_type }}</td>
+                            <td>{{ user.is_admin }}</td>
+                        </tr>
                     {% endfor %}
                 </tbody>
             </table>
-        </div>
 
-        <div class="admin-section">
-            <h3>Subject Management</h3>
-            <table class="admin-table">
+            <!-- List of Subjects -->
+            <h4>All Subjects</h4>
+            <table class="data-table">
                 <thead>
                     <tr>
-                        <th>Code</th>
+                        <th>ID</th>
                         <th>Name</th>
                         <th>Semester</th>
+                        <th>Code</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for subject in subjects %}
+                        <tr>
+                            <td>{{ subject.id }}</td>
+                            <td>{{ subject.name }}</td>
+                            <td>{{ subject.semester }}</td>
+                            <td>{{ subject.code }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+
+            <!-- List of Selected Subjects -->
+            <h4>Selected Subjects</h4>
+            <table class="data-table">
+                <thead>
                     <tr>
-                        <td>{{ subject.code or 'N/A' }}</td>
-                        <td>{{ subject.name }}</td>
-                        <td>{{ subject.semester }}</td>
+                        <th>User ID</th>
+                        <th>Subject ID</th>
+                        <th>Date Selected</th>
                     </tr>
+                </thead>
+                <tbody>
+                    {% for selected_subject in selected_subjects %}
+                        <tr>
+                            <td>{{ selected_subject.user_id }}</td>
+                            <td>{{ selected_subject.subject_id }}</td>
+                            <td>{{ selected_subject.date_selected.strftime('%Y-%m-%d') }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+
+            <!-- List of Exam Dates -->
+            <h4>Exam Dates</h4>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>User ID</th>
+                        <th>Subject ID</th>
+                        <th>Exam Date</th>
+                        <th>Description</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for exam_date in exam_dates %}
+                        <tr>
+                            <td>{{ exam_date.user_id }}</td>
+                            <td>{{ exam_date.subject_id }}</td>
+                            <td>{{ exam_date.exam_date.strftime('%Y-%m-%d') }}</td>
+                            <td>{{ exam_date.description }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+
+            <!-- List of Tasks -->
+            <h4>All Tasks</h4>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>User ID</th>
+                        <th>Title</th>
+                        <th>Description</th>
+                        <th>Due Date</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for task in tasks %}
+                        <tr>
+                            <td>{{ task.id }}</td>
+                            <td>{{ task.user_id }}</td>
+                            <td>{{ task.title }}</td>
+                            <td>{{ task.description }}</td>
+                            <td>{{ task.due_date.strftime('%Y-%m-%d') if task.due_date else 'No due date' }}</td>
+                            <td>{% if task.is_completed %}Completed{% else %}Pending{% endif %}</td>
+                        </tr>
                     {% endfor %}
                 </tbody>
             </table>
         </div>
-
-        <p><a href="{{ url_for('logout') }}">Logout</a></p>
     </div>
 </body>
 </html>
