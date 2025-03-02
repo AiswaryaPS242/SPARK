@@ -431,3 +431,32 @@ button:hover,
     color: #721c24;
     border: 1px solid #f5c6cb;
 }
+
+/* Add this to your style.css file */
+#speak-task-button {
+    background-color: #4CAF50; /* Green background */
+    color: white; /* White text */
+    padding: 10px 20px; /* Padding */
+    border: none; /* No border */
+    border-radius: 5px; /* Rounded corners */
+    cursor: pointer; /* Pointer cursor on hover */
+    margin-top: 10px; /* Space above the button */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px; /* Space between icon and text */
+}
+
+#speak-task-button:hover {
+    background-color: #45a049; /* Darker green on hover */
+}
+
+#speech-feedback {
+    margin-top: 10px;
+    color: #333;
+    font-style: italic;
+}
+
+.hidden {
+    display: none;
+}

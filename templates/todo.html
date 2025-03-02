@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>To-Do List</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <!-- Add Font Awesome for microphone icon -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
 </head>
 <body>
     <div class="app-container">
@@ -33,6 +35,7 @@
                 {% endif %}
             {% endwith %}
 
+            <!-- Add Task Form -->
             <form method="POST" action="{{ url_for('add_task') }}">
                 <div class="form-group">
                     <label for="title">Task Title:</label>
@@ -48,7 +51,87 @@
                 </div>
                 <button type="submit">Add Task</button>
             </form>
+
+            <!-- Speech-to-Text Button with Microphone Icon -->
+            <button id="speak-task-button">
+                <i class="fas fa-microphone"></i> Speak Your Task
+            </button>
+
+            <!-- Feedback Message for Speech Recognition -->
+            <div id="speech-feedback" class="hidden"></div>
         </div>
     </div>
+
+    <!-- JavaScript for Speech-to-Text -->
+    <script>
+        document.getElementById('speak-task-button').addEventListener('click', async function () {
+            const feedbackElement = document.getElementById('speech-feedback');
+            feedbackElement.textContent = 'Listening...';
+            feedbackElement.classList.remove('hidden');
+
+            try {
+                // Check if the browser supports speech recognition
+                if (!('webkitSpeechRecognition' in window)) {
+                    feedbackElement.textContent = 'Your browser does not support speech recognition. Please use Chrome or another supported browser.';
+                    return;
+                }
+
+                // Initialize speech recognition
+                const recognition = new webkitSpeechRecognition();
+                recognition.lang = 'en-US'; // Set language to English
+                recognition.interimResults = false; // Only final results
+                recognition.maxAlternatives = 1; // Only one result
+
+                // Start listening
+                recognition.start();
+
+                // Handle the result
+                recognition.onresult = async function (event) {
+                    const spokenText = event.results[0][0].transcript;
+                    feedbackElement.textContent = `You said: ${spokenText}`;
+
+                    // Send the spoken text to the backend
+                    const response = await fetch('/speech_to_text', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ text: spokenText }),
+                    });
+
+                    const result = await response.json();
+                    if (result.success) {
+                        // Redirect to the home page to show the new task
+                        window.location.href = "{{ url_for('home') }}";
+                    } else {
+                        feedbackElement.textContent = result.error || 'Failed to add task via speech.';
+                    }
+                };
+
+                // Handle errors
+                recognition.onerror = function (event) {
+                    if (event.error === 'no-speech') {
+                        feedbackElement.textContent = 'No speech detected. Please try again.';
+                    } else if (event.error === 'audio-capture') {
+                        feedbackElement.textContent = 'Microphone not found. Please check your microphone settings.';
+                    } else if (event.error === 'not-allowed') {
+                        feedbackElement.textContent = 'Microphone access denied. Please allow microphone access in your browser settings.';
+                    } else {
+                        feedbackElement.textContent = 'Error occurred in speech recognition: ' + event.error;
+                    }
+                };
+
+                // Handle when speech recognition ends
+                recognition.onend = function () {
+                    if (feedbackElement.textContent === 'Listening...') {
+                        feedbackElement.textContent = 'Speech recognition ended. Please try again.';
+                    }
+                };
+            } catch (error) {
+                feedbackElement.textContent = 'An error occurred while processing your request.';
+                console.error(error);
+            }
+        });
+    </script>
 </body>
 </html>

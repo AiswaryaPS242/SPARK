@@ -7,6 +7,8 @@ import random
 from collections import defaultdict
 from flask_migrate import Migrate
 from flask import jsonify
+import speech_recognition as sr  # Import the SpeechRecognition library
+import dateparser  # Import the dateparser library
 
 app = Flask(__name__)
 app.secret_key = 'your_secret_key'  # Change this for production security
@@ -17,7 +19,6 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
-
 
 # Database Models
 class User(db.Model):
@@ -595,116 +596,6 @@ def study_plan():
     flash('Study plan tasks have been added to your home page.', 'success')
     return redirect(url_for('home'))
 
-@app.route('/study_plan')
-def study_plan():
-    if 'user_id' not in session:
-        flash('Please login to view your study plan.', 'error')
-        return redirect(url_for('login'))
-
-    user_id = session['user_id']
-    user = User.query.get(user_id)
-    if not user:
-        session.clear()
-        flash('User not found. Please login again.', 'error')
-        return redirect(url_for('login'))
-
-    # Get the user's selected subjects and exam dates
-    selected_subjects = SelectedSubject.query.filter_by(user_id=user_id).all()
-    exam_dates = ExamDate.query.filter_by(user_id=user_id).all()
-
-    # Debug: Print selected subjects and exam dates
-    print(f"Selected Subjects: {selected_subjects}")
-    print(f"Exam Dates: {exam_dates}")
-
-    if not selected_subjects or not exam_dates:
-        flash('Please select subjects and exam dates first.', 'error')
-        return redirect(url_for('exam_dashboard'))
-
-    # Clear existing study plan tasks
-    Task.query.filter(
-        Task.user_id == user_id,
-        Task.title.like("Study%")  # Filter tasks with titles starting with "Study"
-    ).delete()
-
-    # Generate study schedule for all modules of selected subjects
-    study_schedule = []
-    current_date = datetime.today().date()
-
-    for selected_subject in selected_subjects:
-        subject = Subject.query.get(selected_subject.subject_id)
-        if subject:
-            # Get the exam date for this subject
-            exam_date_record = next((ed for ed in exam_dates if ed.subject_id == subject.id), None)
-            exam_date = exam_date_record.exam_date if exam_date_record else (current_date + timedelta(days=30))
-
-            # Debug: Print subject and exam date
-            print(f"Subject: {subject.name}, Exam Date: {exam_date}")
-
-            # Get all modules for this subject
-            subject_modules = Module.query.filter_by(subject_id=subject.id).all()
-
-            # Generate study schedule for all modules (not just selected ones)
-            for module in subject_modules:
-                # Debug: Print module info
-                print(f"Module: {module.name}, Subject: {subject.name}")
-
-                # Calculate days before exam for spacing
-                days_before_exam = (exam_date - current_date).days
-                days_per_module = max(1, days_before_exam // len(subject_modules)) if subject_modules else 1
-
-                # Add this module to the study schedule
-                study_date = current_date + timedelta(days=len(study_schedule))
-                # Ensure we're not scheduling too close to the exam
-                if (exam_date - study_date).days < 2:
-                    study_date = exam_date - timedelta(days=2)
-
-                study_schedule.append({
-                    'date': study_date,
-                    'module': module.name,
-                    'subject': subject.name,
-                    'subject_id': subject.id,
-                    'is_completed': False  # Since we're only adding incomplete modules
-                })
-
-    # Debug: Print study schedule
-    print(f"Study Schedule: {study_schedule}")
-
-    # Sort study schedule by date
-    study_schedule.sort(key=lambda x: x['date'])
-
-    # Add tasks to the database
-    for task in study_schedule:
-        # Calculate start and end times based on user preferences
-        if user.person_type == 'morning':
-            start_time = '08:00'
-            end_time = '10:00'
-        else:
-            start_time = '20:00'
-            end_time = '22:00'
-
-        # Adjust for slow learners
-        if user.learner_type == 'slow':
-            # Just for description purposes
-            adjusted_end_time = datetime.strptime(end_time, '%H:%M') + timedelta(hours=1)
-            end_time = adjusted_end_time.strftime('%H:%M')
-
-        # Add task to the database
-        new_task = Task(
-            user_id=user_id,
-            title=f"Study {task['subject']} - {task['module']}",
-            description=f"Complete {task['module']} for {task['subject']} ({start_time}-{end_time})",
-            due_date=task['date'],
-            is_completed=task['is_completed']  # Set completion status
-        )
-        db.session.add(new_task)
-
-        # Debug: Print added task
-        print(f"Added Task: {new_task.title}, Due Date: {new_task.due_date}")
-
-    db.session.commit()
-    flash('Study plan tasks have been added to your home page.', 'success')
-    return redirect(url_for('home'))
-
 @app.route('/save_selections', methods=['POST'])
 def save_selections():
     if 'user_id' not in session:
@@ -737,7 +628,6 @@ def save_selections():
                 if request.form.get(f'module{i}_{j}') == '1':
                     module = Module.query.filter_by(subject_id=subject_id, name=f"Module {j}").first()
                     if module:
-                        # Mark this module as selected (completed)
                         completed_module = CompletedModule(
                             user_id=user_id,
                             module_id=module.id)
@@ -898,6 +788,69 @@ def delete_task(task_id):
 
     return redirect(url_for('home'))
 
+# New route to handle speech input
+@app.route('/speech_to_text', methods=['POST'])
+def speech_to_text():
+    if 'user_id' not in session:
+        return jsonify({'error': 'Please login to add a task.'}), 401
+
+    try:
+        # Get the spoken text from the request
+        data = request.get_json()
+        spoken_text = data.get('text')
+
+        if not spoken_text:
+            return jsonify({'error': 'No text provided.'}), 400
+
+        print(f"You said: {spoken_text}")
+
+        # Extract task details from the spoken text
+        if "add task" in spoken_text.lower():
+            # Split the spoken text into parts
+            parts = spoken_text.lower().split("add task")[1].split("due")
+            title = parts[0].strip()  # Task title is always the first part
+            due_date = None
+
+            # Check if a due date was provided
+            if len(parts) > 1:
+                due_date_str = parts[1].strip()
+
+                # Use dateparser to parse natural language dates
+                due_date = dateparser.parse(due_date_str)
+
+                if not due_date:
+                    # If dateparser couldn't parse the date, log a message and proceed without a due date
+                    print("Could not parse the due date. Proceeding without a due date.")
+                else:
+                    # Convert the parsed date to a date object (without time)
+                    due_date = due_date.date()
+
+            # Add the task to the database
+            new_task = Task(
+                user_id=session['user_id'],
+                title=title,
+                description=f"Task added via speech: {title}",
+                due_date=due_date
+            )
+            db.session.add(new_task)
+            db.session.commit()
+
+            return jsonify({
+                'success': True,
+                'message': 'Task added successfully via speech!',
+                'task': {
+                    'id': new_task.id,
+                    'title': new_task.title,
+                    'description': new_task.description,
+                    'due_date': new_task.due_date.strftime('%Y-%m-%d') if new_task.due_date else None
+                }
+            })
+        else:
+            return jsonify({'error': 'Could not understand the task. Please try again.'}), 400
+
+    except Exception as e:
+        return jsonify({'error': f'An error occurred: {str(e)}'}), 500
+    
 @app.route('/logout')
 def logout():
     session.clear()
