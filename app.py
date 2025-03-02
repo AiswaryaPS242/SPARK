@@ -91,7 +91,11 @@ class StudyScheduleEnv:
 
     def reset(self):
         self.current_progress = {module.id: False for module in self.modules}  # Track module completion
-        self.days_remaining = (self.exam_dates[0].exam_date - datetime.today().date()).days
+        # Handle empty exam_dates
+        if self.exam_dates:
+            self.days_remaining = (self.exam_dates[0].exam_date - datetime.today().date()).days
+        else:
+            self.days_remaining = 30  # Default to 30 days if no exam dates are available
         self.state = self._get_state()
         return self.state
 
@@ -670,7 +674,20 @@ def add_task():
     due_date_str = request.form.get('due_date')
 
     try:
-        due_date = datetime.strptime(due_date_str, '%Y-%m-%d').date() if due_date_str else None
+        # Try parsing the date in the correct format (YYYY-MM-DD)
+        due_date = None
+        if due_date_str:
+            try:
+                due_date = datetime.strptime(due_date_str, '%Y-%m-%d').date()
+            except ValueError:
+                # If the format is incorrect, try parsing it in DD-MM-YYYY format
+                try:
+                    due_date = datetime.strptime(due_date_str, '%d-%m-%Y').date()
+                except ValueError:
+                    flash('Invalid date format. Please use YYYY-MM-DD or DD-MM-YYYY.', 'error')
+                    return redirect(url_for('todo'))
+
+        # Add the task to the database
         new_task = Task(
             user_id=user_id,
             title=title,
@@ -706,12 +723,16 @@ def complete_task(task_id):
         else:
             flash('Task marked as completed!', 'success')
 
-        # Adjust future tasks using RL
-        user = User.query.get(session['user_id'])
-        selected_subjects = SelectedSubject.query.filter_by(user_id=user.id).all()
-        exam_dates = ExamDate.query.filter_by(user_id=user.id).all()
-        subjects = [SelectedSubject.subject for SelectedSubject in selected_subjects]
-        agent = train_rl_agent(user, subjects, exam_dates)
+        # Adjust future tasks using RL (only for study plan tasks)
+        if task.title.startswith("Study"):
+            user = User.query.get(session['user_id'])
+            selected_subjects = SelectedSubject.query.filter_by(user_id=user.id).all()
+            exam_dates = ExamDate.query.filter_by(user_id=user.id).all()
+
+            # Only train the RL agent if exam_dates are available
+            if exam_dates:
+                subjects = [selected_subject.subject for selected_subject in selected_subjects]
+                agent = train_rl_agent(user, subjects, exam_dates)
 
         db.session.commit()
     else:
