@@ -5,6 +5,25 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Home</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        .reward-display {
+            font-size: 24px;
+            font-weight: bold;
+            color: #4CAF50;
+            padding: 10px;
+            border: 2px solid #4CAF50;
+            border-radius: 5px;
+            display: inline-block;
+            margin-bottom: 20px;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+    </style>
 </head>
 <body>
     <div class="app-container">
@@ -22,6 +41,11 @@
         <!-- Main Content -->
         <div class="main-content">
             <h2>Welcome, {{ username }}!</h2>
+
+            <!-- Total Reward Display -->
+            <div class="reward-display">
+                Total Reward Points: <span id="total-reward">{{ user.total_reward }}</span>
+            </div>
 
             <!-- Flash Messages -->
             {% with messages = get_flashed_messages(with_categories=true) %}
@@ -97,5 +121,65 @@
             {% endif %}
         </div>
     </div>
+
+    <!-- JavaScript to Update Reward Points Dynamically -->
+    <script>
+        // Function to update the total reward points
+        function updateRewardPoints(newReward) {
+            const rewardElement = document.getElementById('total-reward');
+            rewardElement.textContent = newReward;
+            rewardElement.style.color = newReward >= 0 ? '#4CAF50' : '#FF0000'; // Green for positive, red for negative
+        }
+
+        // Function to handle task completion
+        function completeTask(taskId, buttonElement) {
+            fetch(`/complete_task/${taskId}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Update the reward points dynamically
+                    updateRewardPoints(data.total_reward);
+
+                    // Remove the "Complete" button
+                    const taskItem = buttonElement.closest('.task-item');
+                    const taskActions = taskItem.querySelector('.task-actions');
+                    const completeButtonForm = taskItem.querySelector('form[action*="/complete_task"]');
+                    if (completeButtonForm) {
+                        completeButtonForm.remove(); // Remove the "Complete" button form
+                    }
+
+                    // Update the task status to "Completed"
+                    const taskStatus = taskItem.querySelector('.task-status');
+                    if (taskStatus) {
+                        taskStatus.textContent = 'Completed';
+                        taskStatus.classList.remove('pending');
+                        taskStatus.classList.add('completed');
+                    }
+
+                    alert(data.message); // Show a success message
+                } else {
+                    alert(data.error); // Show an error message
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('An error occurred while completing the task.');
+            });
+        }
+
+        // Attach event listeners to all "Complete" buttons
+        document.querySelectorAll('.btn-complete').forEach(button => {
+            button.addEventListener('click', function(event) {
+                event.preventDefault(); // Prevent the form from submitting
+                const taskId = this.closest('form').action.split('/').pop(); // Extract task ID from form action
+                completeTask(taskId, this); // Call the completeTask function and pass the button element
+            });
+        });
+    </script>
 </body>
 </html>

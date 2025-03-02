@@ -5,6 +5,8 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import numpy as np
 import random
 from collections import defaultdict
+from flask_migrate import Migrate
+from flask import jsonify
 
 app = Flask(__name__)
 app.secret_key = 'your_secret_key'  # Change this for production security
@@ -14,7 +16,7 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://postgres:postgre20@localho
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
-
+migrate = Migrate(app, db)
 
 # Database Models
 class User(db.Model):
@@ -28,6 +30,7 @@ class User(db.Model):
     is_admin = db.Column(db.Boolean, default=False)
     selected_subjects = db.relationship('SelectedSubject', backref='user', lazy=True)
     exam_dates = db.relationship('ExamDate', backref='user', lazy=True)
+    total_reward = db.Column(db.Integer, default=0)  # Ensure default value is 0
 
 class Subject(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -130,10 +133,10 @@ class StudyScheduleEnv:
 
         next_state = self._get_state()
         return next_state, reward, done
-
+    
 # Q-Learning Agent
 class QLearningAgent:
-    def __init__(self, state_size, action_size):
+    def __init__(self, state_size, action_size, subjects, exam_dates):
         self.state_size = state_size
         self.action_size = action_size
         self.q_table = defaultdict(lambda: np.zeros(action_size))
@@ -142,6 +145,8 @@ class QLearningAgent:
         self.epsilon = 1.0
         self.epsilon_decay = 0.995
         self.epsilon_min = 0.01
+        self.subjects = subjects  # Store subjects
+        self.exam_dates = exam_dates  # Store exam_dates
 
     def get_action(self, state):
         if np.random.rand() <= self.epsilon:
@@ -166,7 +171,7 @@ class QLearningAgent:
 # Train the RL Agent
 def train_rl_agent(user, subjects, exam_dates, episodes=1000):
     env = StudyScheduleEnv(user, subjects, exam_dates)
-    agent = QLearningAgent(env.state_size, env.action_size)
+    agent = QLearningAgent(env.state_size, env.action_size, subjects, exam_dates)  # Pass subjects and exam_dates
 
     for episode in range(episodes):
         state = env.reset()
@@ -184,6 +189,32 @@ def train_rl_agent(user, subjects, exam_dates, episodes=1000):
 
     return agent
 
+def adjust_study_plan_based_on_rl(user, agent):
+    # Get the user's study plan tasks
+    study_plan_tasks = Task.query.filter(
+        Task.user_id == user.id,
+        Task.title.like("Study%")
+    ).all()
+
+    # Get the current state of the environment
+    env = StudyScheduleEnv(user, agent.subjects, agent.exam_dates)
+    state = env.reset()
+
+    # Adjust tasks based on the RL agent's recommendations
+    for task in study_plan_tasks:
+        if not task.is_completed:
+            # Get the recommended action from the RL agent
+            action = agent.get_action(state)
+
+            # Update the task's due date based on the action
+            module = env.modules[action]
+            task.due_date = datetime.utcnow().date() + timedelta(days=env.days_remaining)
+
+            # Update the state
+            next_state, _, _ = env.step(action)
+            state = next_state
+
+    db.session.commit()
 
 # Create database tables and populate with initial data
 def init_db():
@@ -422,7 +453,7 @@ def home():
         return redirect(url_for('login'))
 
     user_id = session['user_id']
-    user = User.query.get(user_id)
+    user = User.query.get(user_id)  # Fetch the user from the database
     if not user:
         session.clear()
         flash('User not found. Please login again.', 'error')
@@ -431,21 +462,16 @@ def home():
     # Get all tasks (including study plan tasks)
     tasks = Task.query.filter_by(user_id=user_id).order_by(Task.due_date.asc()).all()
 
-    # Debug: Print all tasks
-    print(f"All Tasks: {tasks}")
-
     # Get study plan tasks (filter by tasks with titles starting with "Study")
     study_plan_tasks = Task.query.filter(
         Task.user_id == user_id,
         Task.title.like("Study%")  # Filter tasks with titles starting with "Study"
     ).order_by(Task.due_date.asc()).all()
 
-    # Debug: Print study plan tasks
-    print(f"Study Plan Tasks: {study_plan_tasks}")
-
     return render_template(
         'home.html',
         username=user.username,
+        user=user,  # Pass the user object to the template
         tasks=tasks,
         study_plan_tasks=study_plan_tasks
     )
@@ -708,38 +734,41 @@ def add_task():
 @app.route('/complete_task/<int:task_id>', methods=['POST'])
 def complete_task(task_id):
     if 'user_id' not in session:
-        flash('Please login to complete a task.', 'error')
-        return redirect(url_for('login'))
+        return jsonify({'error': 'Please login to complete a task.'}), 401
 
     task = Task.query.get(task_id)
     if task and task.user_id == session['user_id']:
+        user = User.query.get(session['user_id'])
+
+        # Initialize total_reward to 0 if it's None
+        if user.total_reward is None:
+            user.total_reward = 0
+
+        # Mark task as completed
         task.is_completed = True
         task.date_completed = datetime.utcnow()
 
-        # Calculate completion time
-        completion_time = task.date_completed.time()
+        # Calculate reward
         if task.due_date and task.due_date < datetime.utcnow().date():
-            flash('Task completed after the deadline!', 'warning')
+            reward = -50  # Penalty for completing after the deadline
+            message = 'Task completed after the deadline!'
         else:
-            flash('Task marked as completed!', 'success')
+            reward = 10  # Reward for completing on time
+            message = 'Task marked as completed!'
 
-        # Adjust future tasks using RL (only for study plan tasks)
-        if task.title.startswith("Study"):
-            user = User.query.get(session['user_id'])
-            selected_subjects = SelectedSubject.query.filter_by(user_id=user.id).all()
-            exam_dates = ExamDate.query.filter_by(user_id=user.id).all()
-
-            # Only train the RL agent if exam_dates are available
-            if exam_dates:
-                subjects = [selected_subject.subject for selected_subject in selected_subjects]
-                agent = train_rl_agent(user, subjects, exam_dates)
-
+        # Update user's total reward
+        user.total_reward += reward
         db.session.commit()
+
+        # Return JSON response
+        return jsonify({
+            'success': True,
+            'message': message,
+            'total_reward': user.total_reward
+        })
     else:
-        flash('Task not found or you do not have permission.', 'error')
-
-    return redirect(url_for('home'))
-
+        return jsonify({'error': 'Task not found or you do not have permission.'}), 404
+    
 # Route to delete a task
 @app.route('/delete_task/<int:task_id>', methods=['POST'])
 def delete_task(task_id):
