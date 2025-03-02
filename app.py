@@ -9,6 +9,8 @@ from flask_migrate import Migrate
 from flask import jsonify
 import speech_recognition as sr  # Import the SpeechRecognition library
 import dateparser  # Import the dateparser library
+from flask_admin import Admin
+from flask_admin.contrib.sqla import ModelView
 
 app = Flask(__name__)
 app.secret_key = 'your_secret_key'  # Change this for production security
@@ -19,6 +21,9 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
+
+# Initialize Flask-Admin
+admin = Admin(app, name='Admin Dashboard', template_mode='bootstrap3')
 
 # Database Models
 class User(db.Model):
@@ -76,6 +81,15 @@ class Task(db.Model):
     is_completed = db.Column(db.Boolean, default=False)
     date_created = db.Column(db.DateTime, default=datetime.utcnow)
     user = db.relationship('User', backref='tasks')
+
+# Add models to Flask-Admin
+admin.add_view(ModelView(User, db.session))
+admin.add_view(ModelView(Subject, db.session))
+admin.add_view(ModelView(Module, db.session))
+admin.add_view(ModelView(SelectedSubject, db.session))
+admin.add_view(ModelView(CompletedModule, db.session))
+admin.add_view(ModelView(ExamDate, db.session))
+admin.add_view(ModelView(Task, db.session))
 
 # Reinforcement Learning Environment
 class StudyScheduleEnv:
@@ -688,6 +702,54 @@ def admin_dashboard():
         exam_dates=exam_dates,
         tasks=tasks
     )
+
+# Add New Subject
+@app.route('/add_subject', methods=['POST'])
+def add_subject():
+    if 'user_id' not in session or not User.query.get(session['user_id']).is_admin:
+        flash('You do not have permission to perform this action.', 'error')
+        return redirect(url_for('admin_dashboard'))
+
+    name = request.form['name']
+    semester = int(request.form['semester'])
+    code = request.form.get('code', None)
+
+    new_subject = Subject(name=name, semester=semester, code=code)
+    db.session.add(new_subject)
+    db.session.commit()
+    flash('Subject added successfully!', 'success')
+    return redirect(url_for('admin_dashboard'))
+
+# Edit Subject
+@app.route('/edit_subject/<int:subject_id>', methods=['GET', 'POST'])
+def edit_subject(subject_id):
+    if 'user_id' not in session or not User.query.get(session['user_id']).is_admin:
+        flash('You do not have permission to perform this action.', 'error')
+        return redirect(url_for('admin_dashboard'))
+
+    subject = Subject.query.get_or_404(subject_id)
+    if request.method == 'POST':
+        subject.name = request.form['name']
+        subject.semester = int(request.form['semester'])
+        subject.code = request.form.get('code', None)
+        db.session.commit()
+        flash('Subject updated successfully!', 'success')
+        return redirect(url_for('admin_dashboard'))
+
+    return render_template('edit_subject.html', subject=subject)
+
+# Delete Subject
+@app.route('/delete_subject/<int:subject_id>', methods=['POST'])
+def delete_subject(subject_id):
+    if 'user_id' not in session or not User.query.get(session['user_id']).is_admin:
+        flash('You do not have permission to perform this action.', 'error')
+        return redirect(url_for('admin_dashboard'))
+
+    subject = Subject.query.get_or_404(subject_id)
+    db.session.delete(subject)
+    db.session.commit()
+    flash('Subject deleted successfully!', 'success')
+    return redirect(url_for('admin_dashboard'))
 
 # Route to add a new task
 @app.route('/add_task', methods=['POST'])

@@ -460,3 +460,41 @@ button:hover,
 .hidden {
     display: none;
 }
+
+/* Styling for buttons */
+.btn-delete {
+    background-color: #f44336;
+    color: white;
+}
+
+.btn-delete:hover {
+    background-color: #e53935;
+}
+
+.btn-cancel {
+    background-color: #6c757d;
+    color: white;
+    text-decoration: none;
+    padding: 10px 20px;
+    border-radius: 4px;
+    margin-left: 10px;
+}
+
+.btn-cancel:hover {
+    background-color: #5a6268;
+}
+
+/* Edit button styling */
+.btn-edit {
+    background-color: #4CAF50; /* Green */
+    color: white;
+    border: none;
+    padding: 5px 10px;
+    cursor: pointer;
+    border-radius: 4px;
+    margin-right: 5px; /* Add some spacing between buttons */
+}
+
+.btn-edit:hover {
+    background-color: #45a049; /* Darker green */
+}
