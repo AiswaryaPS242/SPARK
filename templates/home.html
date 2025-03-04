@@ -23,6 +23,15 @@
             50% { transform: scale(1.05); }
             100% { transform: scale(1); }
         }
+
+        .rl-badge {
+            background-color: #4CAF50;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            margin-left: 8px;
+        }
     </style>
 </head>
 <body>
@@ -89,14 +98,15 @@
                 <p>No tasks found.</p>
             {% endif %}
 
-            <!-- Study Plan Tasks -->
-            <h3>Study Plan Tasks</h3>
+            <!-- RL-Optimized Study Plan Tasks -->
+            <h3>RL-Optimized Study Plan Tasks</h3>
             {% if study_plan_tasks %}
                 <ul class="task-list">
                     {% for task in study_plan_tasks %}
                         <li class="task-item">
                             <div class="task-header">
                                 <strong>{{ task.title }}</strong>
+                                <span class="rl-badge">RL-Optimized</span>
                                 <span class="task-status {% if task.is_completed %}completed{% else %}pending{% endif %}">
                                     {% if task.is_completed %}Completed{% else %}Pending{% endif %}
                                 </span>
@@ -117,7 +127,7 @@
                     {% endfor %}
                 </ul>
             {% else %}
-                <p>No study plan tasks found. <a href="{{ url_for('exam_dashboard') }}" class="btn-create-plan">Go to Exam Dashboard</a> to create a study plan.</p>
+                <p>No RL-optimized study plan tasks found. <a href="{{ url_for('exam_dashboard') }}" class="btn-create-plan">Go to Exam Dashboard</a> to create a study plan.</p>
             {% endif %}
         </div>
     </div>

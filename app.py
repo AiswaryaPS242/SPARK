@@ -11,6 +11,7 @@ import speech_recognition as sr  # Import the SpeechRecognition library
 import dateparser  # Import the dateparser library
 from flask_admin import Admin
 from flask_admin.contrib.sqla import ModelView
+from flask_session import Session
 
 app = Flask(__name__)
 app.secret_key = 'your_secret_key'  # Change this for production security
@@ -20,6 +21,13 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://postgres:postgre20@localho
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
+
+# SQLAlchemy Session Configuration
+app.config['SESSION_TYPE'] = 'sqlalchemy'
+app.config['SESSION_SQLALCHEMY'] = db  # Use the existing SQLAlchemy instance
+# Initialize Flask-Session
+Session(app)
+
 migrate = Migrate(app, db)
 
 # Initialize Flask-Admin
@@ -151,6 +159,10 @@ class StudyScheduleEnv:
         return next_state, reward, done
     
 # Q-Learning Agent
+import numpy as np
+import random
+from collections import defaultdict
+
 class QLearningAgent:
     def __init__(self, state_size, action_size, subjects, exam_dates):
         self.state_size = state_size
@@ -161,29 +173,72 @@ class QLearningAgent:
         self.epsilon = 1.0
         self.epsilon_decay = 0.995
         self.epsilon_min = 0.01
-        self.subjects = subjects  # Store subjects
-        self.exam_dates = exam_dates  # Store exam_dates
+        self.subjects = subjects
+        self.exam_dates = exam_dates
 
     def get_action(self, state):
+        """Get the recommended action from the RL agent."""
         if np.random.rand() <= self.epsilon:
-            return random.randrange(self.action_size)
+            action = random.randrange(self.action_size)
+            print(f"Random action selected: {action}")  # Debug statement
         else:
-            return np.argmax(self.q_table[tuple(state)])
+            action = np.argmax(self.q_table[tuple(state)])
+            print(f"Optimal action selected: {action}")  # Debug statement
+    
+        return action
 
     def update_q_table(self, state, action, reward, next_state, done):
         state = tuple(state)
         next_state = tuple(next_state)
         q_value = self.q_table[state][action]
         next_q_value = np.max(self.q_table[next_state])
-
-        # Update Q-value using Bellman equation
         new_q_value = q_value + self.learning_rate * (reward + self.discount_factor * next_q_value - q_value)
         self.q_table[state][action] = new_q_value
-
-        # Decay epsilon
         if done:
             self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
 
+    def to_dict(self):
+        """
+    Serialize the RL agent to a dictionary.
+    """
+        # Serialize q_table keys as strings in a consistent format
+        q_table_serialized = {str(tuple(map(int, k))): v.tolist() for k, v in self.q_table.items()}
+        return {
+            'state_size': self.state_size,
+            'action_size': self.action_size,
+            'q_table': q_table_serialized,
+            'learning_rate': self.learning_rate,
+            'discount_factor': self.discount_factor,
+            'epsilon': self.epsilon,
+            'epsilon_decay': self.epsilon_decay,
+            'epsilon_min': self.epsilon_min,
+            'subjects': [subject.id for subject in self.subjects],
+            'exam_dates': [exam_date.id for exam_date in self.exam_dates]
+        }
+
+    @classmethod
+    def from_dict(cls, data, subjects, exam_dates):
+        """Deserialize the RL agent from a dictionary."""
+        agent = cls(data['state_size'], data['action_size'], subjects, exam_dates)
+    
+        try:
+            # Deserialize the q_table
+            agent.q_table = defaultdict(
+                lambda: np.zeros(data['action_size']),
+                {tuple(map(int, k.strip('()').split(','))): np.array(v) 
+                 for k, v in data['q_table'].items()}
+                )
+            agent.learning_rate = data['learning_rate']
+            agent.discount_factor = data['discount_factor']
+            agent.epsilon = data['epsilon']
+            agent.epsilon_decay = data['epsilon_decay']
+            agent.epsilon_min = data['epsilon_min']
+        except Exception as e:
+            print(f"Error deserializing RL agent: {e}")
+            raise ValueError("Failed to deserialize RL agent data.")
+    
+        return agent
+    
 # Train the RL Agent
 def train_rl_agent(user, subjects, exam_dates, episodes=1000):
     env = StudyScheduleEnv(user, subjects, exam_dates)
@@ -206,11 +261,25 @@ def train_rl_agent(user, subjects, exam_dates, episodes=1000):
     return agent
 
 def adjust_study_plan_based_on_rl(user, agent):
+    """
+    Adjust the study plan based on the RL agent's recommendations.
+    """
+    print("Adjusting study plan based on RL agent...")  # Debug statement
+
     # Get the user's study plan tasks
     study_plan_tasks = Task.query.filter(
         Task.user_id == user.id,
         Task.title.like("Study%")
     ).all()
+
+    if not study_plan_tasks:
+        print("No study plan tasks found. Skipping RL adjustments.")  # Debug statement
+        return
+
+    # Debugging: Print the tasks found
+    print(f"Found {len(study_plan_tasks)} study plan tasks:")
+    for task in study_plan_tasks:
+        print(f"- {task.title} (Due: {task.due_date})")
 
     # Get the current state of the environment
     env = StudyScheduleEnv(user, agent.subjects, agent.exam_dates)
@@ -221,16 +290,30 @@ def adjust_study_plan_based_on_rl(user, agent):
         if not task.is_completed:
             # Get the recommended action from the RL agent
             action = agent.get_action(state)
+            print(f"Recommended action for task {task.title}: {action}")  # Debug statement
 
             # Update the task's due date based on the action
-            module = env.modules[action]
-            task.due_date = datetime.utcnow().date() + timedelta(days=env.days_remaining)
+            try:
+                module = env.modules[action]
+                safe_due_date = datetime.utcnow().date() + timedelta(days=env.days_remaining - 2)
+
+                # Prevent due dates from being in the past
+                if safe_due_date < datetime.utcnow().date():
+                    safe_due_date = datetime.utcnow().date()  # Set it to today if it's in the past
+
+                task.due_date = safe_due_date
+                print(f"Updated due date for task {task.title} to {task.due_date}")  # Debug statement
+            except IndexError:
+                print(f"Invalid action {action} for task {task.title}. Skipping update.")  # Debug statement
+                continue
 
             # Update the state
             next_state, _, _ = env.step(action)
             state = next_state
 
+    # Commit changes to the database
     db.session.commit()
+    print("Study plan adjusted based on RL agent.")  # Debug statement
 
 # Create database tables and populate with initial data
 def init_db():
@@ -494,6 +577,12 @@ def home():
 
 @app.route('/study_plan')
 def study_plan():
+    """
+    Generate or update the study plan for the logged-in user.
+    If an RL agent is available in the session, it will be used to adjust the study plan.
+    Otherwise, a default study plan will be generated.
+    """
+    # Check if the user is logged in
     if 'user_id' not in session:
         flash('Please login to view your study plan.', 'error')
         return redirect(url_for('login'))
@@ -509,77 +598,107 @@ def study_plan():
     selected_subjects = SelectedSubject.query.filter_by(user_id=user_id).all()
     exam_dates = ExamDate.query.filter_by(user_id=user_id).all()
 
-    # Debug: Print selected subjects and exam dates
-    print(f"Selected Subjects: {selected_subjects}")
-    print(f"Exam Dates: {exam_dates}")
-
     if not selected_subjects or not exam_dates:
         flash('Please select subjects and exam dates first.', 'error')
         return redirect(url_for('exam_dashboard'))
 
     # Clear existing study plan tasks
+    try:
+        clear_study_plan_tasks(user_id)
+    except Exception as e:
+        flash('An error occurred while clearing the study plan. Please try again.', 'error')
+        return redirect(url_for('home'))
+
+    # Debugging: Print selected subjects, exam dates, and RL agent data
+    print("Selected Subjects:", selected_subjects)
+    print("Exam Dates:", exam_dates)
+    print("RL Agent Data in Session:", session.get('rl_agent'))
+
+    # Generate the default study plan first
+    generate_default_study_plan(user, selected_subjects, exam_dates)
+
+    # Recreate the RL agent from the session data (if available)
+    if 'rl_agent' in session:
+        agent_data = session['rl_agent']
+        required_fields = ['state_size', 'action_size', 'q_table', 'learning_rate', 'discount_factor', 'epsilon', 'epsilon_decay', 'epsilon_min', 'subjects', 'exam_dates']
+        
+        # Validate session data
+        if not all(field in agent_data for field in required_fields):
+            print("Invalid RL agent data in session.")
+            flash('Invalid RL agent data. Generating a default study plan.', 'warning')
+        else:
+            try:
+                subjects = [Subject.query.get(subject_id) for subject_id in agent_data['subjects']]
+                exam_dates = [ExamDate.query.get(exam_date_id) for exam_date_id in agent_data['exam_dates']]
+                agent = QLearningAgent.from_dict(agent_data, subjects, exam_dates)
+                adjust_study_plan_based_on_rl(user, agent)  # Use RL to adjust the study plan
+            except Exception as e:
+                print(f"Error recreating RL agent: {e}")
+                flash('An error occurred while recreating the RL agent. Generating a default study plan.', 'warning')
+    else:
+        print("RL Agent not found in session.")  # Debug statement
+        flash('RL agent not found. Generating a default study plan.', 'warning')
+
+    db.session.commit()
+    print("Tasks committed to the database.")  # Debug statement
+    flash('Study plan tasks have been added to your home page.', 'success')
+    return redirect(url_for('home'))
+
+def clear_study_plan_tasks(user_id):
+    """
+    Helper function to clear existing study plan tasks for the user.
+    """
     Task.query.filter(
         Task.user_id == user_id,
-        Task.title.like("Study%")  # Filter tasks with titles starting with "Study"
+        Task.title.like("Study%")
     ).delete()
+    db.session.commit()
 
-    # Generate study schedule for selected modules of selected subjects
+def generate_default_study_plan(user, selected_subjects, exam_dates):
+    """
+    Helper function to generate a default study plan without duplicates.
+    """
+    print("Generating default study plan...")  # Debug statement
     study_schedule = []
     current_date = datetime.today().date()
 
     for selected_subject in selected_subjects:
         subject = Subject.query.get(selected_subject.subject_id)
         if subject:
-            # Get the exam date for this subject
             exam_date_record = next((ed for ed in exam_dates if ed.subject_id == subject.id), None)
             exam_date = exam_date_record.exam_date if exam_date_record else (current_date + timedelta(days=30))
-
-            # Debug: Print subject and exam date
-            print(f"Subject: {subject.name}, Exam Date: {exam_date}")
-
-            # Get selected modules for this subject
             selected_modules = (
                 db.session.query(Module)
                 .join(CompletedModule, CompletedModule.module_id == Module.id)
-                .filter(CompletedModule.user_id == user_id, Module.subject_id == subject.id)
+                .filter(CompletedModule.user_id == user.id, Module.subject_id == subject.id)
                 .all()
             )
 
-            # Debug: Print selected modules
-            print(f"Selected Modules for Subject {subject.name}: {[m.name for m in selected_modules]}")
-
-            # Generate study schedule for selected modules
             for module in selected_modules:
-                # Debug: Print module info
-                print(f"Module: {module.name}, Subject: {subject.name}")
+                # Ensure each module is only added once
+                if module.name not in [task['module'] for task in study_schedule]:
+                    days_before_exam = (exam_date - current_date).days
+                    days_per_module = max(1, days_before_exam // len(selected_modules)) if selected_modules else 1
+                    study_date = current_date + timedelta(days=len(study_schedule))
+                    
+                    # Ensure the study date is at least 2 days before the exam
+                    if (exam_date - study_date).days < 2:
+                        study_date = exam_date - timedelta(days=2)
 
-                # Calculate days before exam for spacing
-                days_before_exam = (exam_date - current_date).days
-                days_per_module = max(1, days_before_exam // len(selected_modules)) if selected_modules else 1
+                    study_schedule.append({
+                        'date': study_date,
+                        'module': module.name,
+                        'subject': subject.name,
+                        'subject_id': subject.id,
+                        'is_completed': False
+                    })
+                    print(f"Added module {module.name} to study schedule on {study_date}")  # Debug statement
 
-                # Add this module to the study schedule
-                study_date = current_date + timedelta(days=len(study_schedule))
-                # Ensure we're not scheduling too close to the exam
-                if (exam_date - study_date).days < 2:
-                    study_date = exam_date - timedelta(days=2)
-
-                study_schedule.append({
-                    'date': study_date,
-                    'module': module.name,
-                    'subject': subject.name,
-                    'subject_id': subject.id,
-                    'is_completed': False  # Since we're only adding incomplete modules
-                })
-
-    # Debug: Print study schedule
-    print(f"Study Schedule: {study_schedule}")
-
-    # Sort study schedule by date
+    # Sort the study schedule by date
     study_schedule.sort(key=lambda x: x['date'])
 
-    # Add tasks to the database
+    # Create tasks for the study schedule
     for task in study_schedule:
-        # Calculate start and end times based on user preferences
         if user.person_type == 'morning':
             start_time = '08:00'
             end_time = '10:00'
@@ -587,48 +706,50 @@ def study_plan():
             start_time = '20:00'
             end_time = '22:00'
 
-        # Adjust for slow learners
         if user.learner_type == 'slow':
-            # Just for description purposes
             adjusted_end_time = datetime.strptime(end_time, '%H:%M') + timedelta(hours=1)
             end_time = adjusted_end_time.strftime('%H:%M')
 
-        # Add task to the database
         new_task = Task(
-            user_id=user_id,
+            user_id=user.id,
             title=f"Study {task['subject']} - {task['module']}",
             description=f"Complete {task['module']} for {task['subject']} ({start_time}-{end_time})",
             due_date=task['date'],
-            is_completed=task['is_completed']  # Set completion status
+            is_completed=task['is_completed']
         )
         db.session.add(new_task)
+        print(f"Created task: {new_task.title} due on {new_task.due_date}")  # Debug statement
 
-        # Debug: Print added task
-        print(f"Added Task: {new_task.title}, Due Date: {new_task.due_date}")
-
+    # Commit changes to the database
     db.session.commit()
-    flash('Study plan tasks have been added to your home page.', 'success')
-    return redirect(url_for('home'))
+    print("Default study plan generated and tasks added to the database.")  # Debug statement
 
 @app.route('/save_selections', methods=['POST'])
 def save_selections():
+    """
+    Save the user's selected subjects, modules, and exam dates.
+    Train the RL agent after saving the selections.
+    """
     if 'user_id' not in session:
         flash('Please login to save your selections.', 'error')
         return redirect(url_for('login'))
 
     user_id = session['user_id']
 
-    # Debug: Print form data
-    print(f"Form Data: {request.form}")
-
     # Clear previous selections
-    SelectedSubject.query.filter_by(user_id=user_id).delete()
-    CompletedModule.query.filter_by(user_id=user_id).delete()
-    ExamDate.query.filter_by(user_id=user_id).delete()
+    try:
+        SelectedSubject.query.filter_by(user_id=user_id).delete()
+        CompletedModule.query.filter_by(user_id=user_id).delete()
+        ExamDate.query.filter_by(user_id=user_id).delete()
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        flash('An error occurred while clearing previous selections. Please try again.', 'error')
+        return redirect(url_for('exam_dashboard'))
 
     # Get selected subjects
     selected_subject_ids = []
-    for i in range(1, 6):  # Assuming 5 subject slots as in your HTML
+    for i in range(1, 6):  # Assuming 5 subject slots
         subject_id = request.form.get(f'subject{i}')
         if subject_id and subject_id != "":
             selected_subject_ids.append(int(subject_id))
@@ -647,32 +768,65 @@ def save_selections():
                             module_id=module.id)
                         db.session.add(completed_module)
 
-    # Debug: Print selected subject IDs
-    print(f"Selected Subject IDs: {selected_subject_ids}")
-
     # Process exam dates for each selected subject
     for i, subject_id in enumerate(selected_subject_ids, 1):
         exam_date_str = request.form.get(f'examDate{i}')
         if exam_date_str:
             try:
                 exam_date_obj = datetime.strptime(exam_date_str, '%Y-%m-%d').date()
-
-                # Add new exam date
                 exam_date = ExamDate(
                     user_id=user_id,
                     subject_id=subject_id,
                     exam_date=exam_date_obj,
                     description=f"Exam for {Subject.query.get(subject_id).name}")
                 db.session.add(exam_date)
-
-                # Debug: Print exam date
-                print(f"Exam Date for Subject {subject_id}: {exam_date_obj}")
-
             except ValueError:
                 flash(f'Invalid date format for subject {i}. Please use YYYY-MM-DD.', 'error')
 
-    db.session.commit()
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        flash('An error occurred while saving your selections. Please try again.', 'error')
+        return redirect(url_for('exam_dashboard'))
+
+    # Train the RL agent after saving selections
+    user = User.query.get(user_id)
+    selected_subjects = SelectedSubject.query.filter_by(user_id=user_id).all()
+    subjects = [Subject.query.get(s.subject_id) for s in selected_subjects]
+    exam_dates = ExamDate.query.filter_by(user_id=user_id).all()
+
+    # Train the RL agent
+    agent = train_rl_agent(user, subjects, exam_dates, episodes=1000)
+
+    # Store the serialized agent in the session
+    session['rl_agent'] = agent.to_dict()
+    print("RL Agent stored in session:", session['rl_agent'])
+
     flash('Selections saved successfully!', 'success')
+    return redirect(url_for('study_plan'))
+
+@app.route('/retrain_rl_agent', methods=['POST'])
+def retrain_rl_agent():
+    """
+    Retrain the RL agent based on the user's current selections.
+    """
+    if 'user_id' not in session:
+        flash('Please login to retrain the RL agent.', 'error')
+        return redirect(url_for('login'))
+
+    user_id = session['user_id']
+    user = User.query.get(user_id)
+    selected_subjects = SelectedSubject.query.filter_by(user_id=user_id).all()
+    subjects = [Subject.query.get(s.subject_id) for s in selected_subjects]
+    exam_dates = ExamDate.query.filter_by(user_id=user_id).all()
+
+    # Retrain the RL agent
+    agent = train_rl_agent(user, subjects, exam_dates, episodes=1000)
+
+    # Store the retrained agent in the session
+    session['rl_agent'] = agent.to_dict()
+    flash('RL agent retrained successfully!', 'success')
     return redirect(url_for('study_plan'))
 
 @app.route('/admin_dashboard')
@@ -814,10 +968,10 @@ def complete_task(task_id):
 
         # Calculate reward
         if task.due_date and task.due_date < datetime.utcnow().date():
-            reward = -50  # Penalty for completing after the deadline
+            reward = -10  # Penalty for completing after the deadline
             message = 'Task completed after the deadline!'
         else:
-            reward = 10  # Reward for completing on time
+            reward = 20  # Reward for completing on time
             message = 'Task marked as completed!'
 
         # Update user's total reward
