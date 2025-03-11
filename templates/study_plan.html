@@ -1,10 +1,19 @@
-<!-- study_plan.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Study Plan</title>
+    <style>
+        .rl-badge {
+            background-color: #4CAF50;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            margin-left: 8px;
+        }
+    </style>
 </head>
 <body>
     <h1>Study Plan for {{ username }}</h1>
@@ -14,6 +23,7 @@
                 <th>Date</th>
                 <th>Subject</th>
                 <th>Module</th>
+                <th>Status</th>
             </tr>
         </thead>
         <tbody>
@@ -22,6 +32,12 @@
                 <td>{{ task.date }}</td>
                 <td>{{ task.subject }}</td>
                 <td>{{ task.module }}</td>
+                <td>
+                    <span class="rl-badge">RL-Optimized</span>
+                    <span class="task-status {% if task.is_completed %}completed{% else %}pending{% endif %}">
+                        {% if task.is_completed %}Completed{% else %}Pending{% endif %}
+                    </span>
+                </td>
             </tr>
             {% endfor %}
         </tbody>
