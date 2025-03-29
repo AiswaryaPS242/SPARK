@@ -111,6 +111,7 @@ class Task(db.Model):
     is_completed = db.Column(db.Boolean, default=False)
     date_created = db.Column(db.DateTime, default=datetime.utcnow)
     user = db.relationship('User', backref='tasks')
+    task_type = db.Column(db.String(20), default='manual')  # 'manual', 'exam', 'nlp'
 
 # Add models to Flask-Admin
 admin.add_view(ModelView(User, db.session))
@@ -294,35 +295,36 @@ def send_email_reminder(user_email, task_title, due_date):
 
 # Function to schedule email reminders
 def schedule_email_reminder(task):
-    print(f"\n=== Email Debug ===")
-    print(f"Task Due: {task.due_date}")
-    print(f"Current Time: {datetime.now()}")
-    
-    if task.due_date:
-        user = User.query.get(task.user_id)
-        if user and user.email:
-            print(f"User Email: {user.email}")
-            
-            # Calculate when email should send (1 day before)
-            reminder_date = task.due_date - timedelta(days=1)
-            print(f"Will send at: {reminder_date}")
-            
-            # ACTUALLY SEND THE EMAIL (was missing in your version)
-            try:
-                msg = Message(
-                    f"Reminder: {task.title}",
-                    recipients=[user.email],
-                    body=f"""
-                    This is a reminder for your task:
-                    Title: {task.title}
-                    Due: {task.due_date}
-                    Description: {task.description or 'No description'}
-                    """
-                )
-                mail.send(msg)
-                print("DEBUG: Email reminder sent successfully!")
-            except Exception as e:
-                print(f"ERROR sending email: {str(e)}")
+    """Send reminders for ALL task types with validation."""
+    if not task.due_date:
+        print(f"⚠️ No due_date for task: {task.title}")
+        return
+
+    user = User.query.get(task.user_id)
+    if not user or not user.email:
+        print(f"⚠️ No user/email for task: {task.title}")
+        return
+
+    try:
+        # Format due date nicely
+        due_date_str = task.due_date.strftime("%A, %b %d")
+        
+        msg = Message(
+            f"⏰ Reminder: {task.title}",
+            recipients=[user.email],
+            html=f"""
+            <h2 style="color: #2c3e50;">Task Reminder</h2>
+            <p>Your task <strong>{task.title}</strong> is due on <strong>{due_date_str}</strong>.</p>
+            <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px;">
+                <p><em>{task.description or 'No additional details'}</em></p>
+                <small>Task type: {task.task_type}</small>
+            </div>
+            """
+        )
+        mail.send(msg)
+        print(f"✅ Reminder sent for {task.task_type} task: {task.title}")
+    except Exception as e:
+        print(f"❌ Failed to send reminder for {task.title}: {str(e)}")
 
 # Train the RL Agent
 def train_rl_agent(user, subjects, exam_dates, episodes=1000):
@@ -347,9 +349,9 @@ def train_rl_agent(user, subjects, exam_dates, episodes=1000):
 
 def adjust_study_plan_based_on_rl(user, agent):
     """
-    Adjust the study plan based on the RL agent's recommendations.
+    Adjust the study plan based on the RL agent's recommendations and schedule reminders.
     """
-    print("Adjusting study plan based on RL agent...")  # Debug statement
+    print("Adjusting study plan based on RL agent...")
 
     # Get the user's study plan tasks
     study_plan_tasks = Task.query.filter(
@@ -358,47 +360,49 @@ def adjust_study_plan_based_on_rl(user, agent):
     ).all()
 
     if not study_plan_tasks:
-        print("No study plan tasks found. Skipping RL adjustments.")  # Debug statement
+        print("No study plan tasks found. Skipping RL adjustments.")
         return
 
-    # Debugging: Print the tasks found
     print(f"Found {len(study_plan_tasks)} study plan tasks:")
     for task in study_plan_tasks:
         print(f"- {task.title} (Due: {task.due_date})")
 
-    # Get the current state of the environment
+    # Initialize RL environment
     env = StudyScheduleEnv(user, agent.subjects, agent.exam_dates)
     state = env.reset()
 
-    # Adjust tasks based on the RL agent's recommendations
+    # Adjust tasks and schedule reminders
     for task in study_plan_tasks:
         if not task.is_completed:
-            # Get the recommended action from the RL agent
             action = agent.get_action(state)
-            print(f"Recommended action for task {task.title}: {action}")  # Debug statement
+            print(f"Recommended action for task {task.title}: {action}")
 
-            # Update the task's due date based on the action
             try:
                 module = env.modules[action]
                 safe_due_date = datetime.utcnow().date() + timedelta(days=env.days_remaining - 2)
-
-                # Prevent due dates from being in the past
+                
+                # Ensure due date isn't in the past
                 if safe_due_date < datetime.utcnow().date():
-                    safe_due_date = datetime.utcnow().date()  # Set it to today if it's in the past
+                    safe_due_date = datetime.utcnow().date()
 
+                # Update task properties
                 task.due_date = safe_due_date
-                print(f"Updated due date for task {task.title} to {task.due_date}")  # Debug statement
+                task.task_type = 'rl_study'  # Mark as RL-generated task
+                print(f"Updated due date for task {task.title} to {task.due_date}")
+
+                # Schedule reminder for this adjusted task
+                schedule_email_reminder(task)
+                
             except IndexError:
-                print(f"Invalid action {action} for task {task.title}. Skipping update.")  # Debug statement
+                print(f"Invalid action {action} for task {task.title}. Skipping update.")
                 continue
 
-            # Update the state
+            # Update environment state
             next_state, _, _ = env.step(action)
             state = next_state
 
-    # Commit changes to the database
     db.session.commit()
-    print("Study plan adjusted based on RL agent.")  # Debug statement
+    print("Study plan adjusted and reminders scheduled based on RL agent.")  # Debug statement
 
 # Create database tables and populate with initial data
 def init_db():
@@ -1023,7 +1027,8 @@ def add_task():
             user_id=user_id,
             title=title,
             description=description,
-            due_date=due_date
+            due_date=due_date,
+            task_type='manual'  # Explicitly set type
         )
         db.session.add(new_task)
         db.session.commit()
@@ -1135,10 +1140,12 @@ def speech_to_text():
                 user_id=session['user_id'],
                 title=title,
                 description=f"Task added via speech: {title}",
-                due_date=due_date
+                due_date=due_date,
+                task_type='nlp'  # Mark as NLP task
             )
             db.session.add(new_task)
             db.session.commit()
+            schedule_email_reminder(new_task)  # Send reminder
 
             return jsonify({
                 'success': True,
