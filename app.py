@@ -12,6 +12,18 @@ import dateparser  # Import the dateparser library
 from flask_admin import Admin
 from flask_admin.contrib.sqla import ModelView
 from flask_session import Session
+import smtplib
+from flask_mail import Message 
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from threading import Thread
+from datetime import datetime, timedelta
+from dotenv import load_dotenv
+import os
+from flask_mail import Mail
+
+
+load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = 'your_secret_key'  # Change this for production security
@@ -28,8 +40,17 @@ app.config['SESSION_SQLALCHEMY'] = db  # Use the existing SQLAlchemy instance
 # Initialize Flask-Session
 Session(app)
 
-migrate = Migrate(app, db)
+app.config['MAIL_SERVER'] = os.getenv('MAIL_SERVER')
+app.config['MAIL_PORT'] = int(os.getenv('MAIL_PORT'))
+app.config['MAIL_USE_TLS'] = os.getenv('MAIL_USE_TLS', 'True').lower() == 'true'
+app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME')
+app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD')
+app.config['MAIL_DEFAULT_SENDER'] = os.getenv('MAIL_DEFAULT_SENDER')
+app.config['MAIL_DEBUG'] = True  # Show detailed SMTP logs
+app.config['MAIL_SUPPRESS_SEND'] = False  # Actually send emails
 
+migrate = Migrate(app, db)
+mail = Mail(app) 
 # Initialize Flask-Admin
 admin = Admin(app, name='Admin Dashboard', template_mode='bootstrap3')
 
@@ -37,6 +58,7 @@ admin = Admin(app, name='Admin Dashboard', template_mode='bootstrap3')
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
+    email = db.Column(db.String(120), unique=True, nullable=False)
     password = db.Column(db.String(200), nullable=False)
     semester = db.Column(db.Integer, nullable=False)
     person_type = db.Column(db.String(20), nullable=False)  # 'morning' or 'night'
@@ -238,7 +260,70 @@ class QLearningAgent:
             raise ValueError("Failed to deserialize RL agent data.")
     
         return agent
+
+def send_email_reminder(user_email, task_title, due_date):
+    try:
+        msg = MIMEMultipart()
+        msg['From'] = app.config['MAIL_DEFAULT_SENDER']
+        msg['To'] = user_email
+        msg['Subject'] = f"Reminder: {task_title} is due soon!"
+        
+        body = f"""
+        <html>
+            <body>
+                <h2>Task Reminder</h2>
+                <p>This is a reminder that your task <strong>{task_title}</strong> is due on <strong>{due_date}</strong>.</p>
+                <p>Please complete it before the deadline!</p>
+                <br>
+                <p>Best regards,</p>
+                <p>SPARK Team</p>
+            </body>
+        </html>
+        """
+        
+        msg.attach(MIMEText(body, 'html'))
+        
+        with smtplib.SMTP(app.config['MAIL_SERVER'], app.config['MAIL_PORT']) as server:
+            server.starttls()
+            server.login(app.config['MAIL_USERNAME'], app.config['MAIL_PASSWORD'])
+            server.send_message(msg)
+        
+        print(f"Email reminder sent to {user_email}")
+    except Exception as e:
+        print(f"Error sending email: {e}")
+
+# Function to schedule email reminders
+def schedule_email_reminder(task):
+    print(f"\n=== Email Debug ===")
+    print(f"Task Due: {task.due_date}")
+    print(f"Current Time: {datetime.now()}")
     
+    if task.due_date:
+        user = User.query.get(task.user_id)
+        if user and user.email:
+            print(f"User Email: {user.email}")
+            
+            # Calculate when email should send (1 day before)
+            reminder_date = task.due_date - timedelta(days=1)
+            print(f"Will send at: {reminder_date}")
+            
+            # ACTUALLY SEND THE EMAIL (was missing in your version)
+            try:
+                msg = Message(
+                    f"Reminder: {task.title}",
+                    recipients=[user.email],
+                    body=f"""
+                    This is a reminder for your task:
+                    Title: {task.title}
+                    Due: {task.due_date}
+                    Description: {task.description or 'No description'}
+                    """
+                )
+                mail.send(msg)
+                print("DEBUG: Email reminder sent successfully!")
+            except Exception as e:
+                print(f"ERROR sending email: {str(e)}")
+
 # Train the RL Agent
 def train_rl_agent(user, subjects, exam_dates, episodes=1000):
     env = StudyScheduleEnv(user, subjects, exam_dates)
@@ -466,20 +551,22 @@ def login():
 def create_account():
     if request.method == 'POST':
         username = request.form['username']
+        email = request.form['email']
         password = request.form['password']
         semester = int(request.form['semester'])
         person_type = request.form['person_type']
         learner_type = request.form['learner_type']
 
-        # Check if username already exists
-        existing_user = User.query.filter_by(username=username).first()
+        # Check if username or email already exists
+        existing_user = User.query.filter((User.username == username) | (User.email == email)).first()
         if existing_user:
-            flash('Username already exists. Please choose another one.', 'error')
+            flash('Username or email already exists. Please choose another one.', 'error')
             return render_template('create_account.html')
        
         # Create new user
         new_user = User(
             username=username,
+            email=email,
             password=generate_password_hash(password),
             semester=semester,
             person_type=person_type,
@@ -940,6 +1027,8 @@ def add_task():
         )
         db.session.add(new_task)
         db.session.commit()
+        if due_date:
+            schedule_email_reminder(new_task)
         flash('Task added successfully!', 'success')
     except Exception as e:
         db.session.rollback()
@@ -1098,7 +1187,33 @@ def progress():
         completed_tasks=completed_tasks,
         progress_percentage=progress_percentage
     )
+    
+@app.route('/test-smtp')
+def test_smtp():
+    try:
+        with smtplib.SMTP(os.getenv('MAIL_SERVER'), int(os.getenv('MAIL_PORT'))) as smtp:
+            smtp.starttls()
+            smtp.login(os.getenv('MAIL_USERNAME'), os.getenv('MAIL_PASSWORD'))
+            return "✅ SMTP Connection Successful"
+    except Exception as e:
+        return f"❌ SMTP Failed: {str(e)}"
 
+@app.route('/force-email')
+def force_email():
+    try:
+        msg = Message(
+            "TEST Email from SPARK",
+            sender=app.config['MAIL_DEFAULT_SENDER'],
+            recipients=["aiswarya75ps@gmail.com"],
+            body=f"Test sent at {datetime.now()}"
+        )
+        mail.send(msg)
+        print("DEBUG: Email sent successfully!")  # Check console for this
+        return "Email forced - check inbox/spam immediately"
+    except Exception as e:
+        print(f"ERROR: {str(e)}")  # This will show in console
+        return f"Send failed: {str(e)}"
+    
 @app.route('/logout')
 def logout():
     session.clear()
