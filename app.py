@@ -21,7 +21,9 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import os
 from flask_mail import Mail
-
+from apscheduler.schedulers.background import BackgroundScheduler
+# Shut down the scheduler when exiting the app
+import atexit
 
 load_dotenv()
 
@@ -295,9 +297,17 @@ def send_email_reminder(user_email, task_title, due_date):
 
 # Function to schedule email reminders
 def schedule_email_reminder(task):
-    """Send reminders for ALL task types with validation."""
+    """Send reminders only if the task is due tomorrow."""
     if not task.due_date:
         print(f"⚠️ No due_date for task: {task.title}")
+        return
+
+    # Calculate if the task is due tomorrow
+    today = datetime.utcnow().date()
+    tomorrow = today + timedelta(days=1)
+    
+    if task.due_date != tomorrow:
+        print(f"Task {task.title} is not due tomorrow (due: {task.due_date})")
         return
 
     user = User.query.get(task.user_id)
@@ -314,7 +324,7 @@ def schedule_email_reminder(task):
             recipients=[user.email],
             html=f"""
             <h2 style="color: #2c3e50;">Task Reminder</h2>
-            <p>Your task <strong>{task.title}</strong> is due on <strong>{due_date_str}</strong>.</p>
+            <p>Your task <strong>{task.title}</strong> is due tomorrow (<strong>{due_date_str}</strong>).</p>
             <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px;">
                 <p><em>{task.description or 'No additional details'}</em></p>
                 <small>Task type: {task.task_type}</small>
@@ -325,6 +335,23 @@ def schedule_email_reminder(task):
         print(f"✅ Reminder sent for {task.task_type} task: {task.title}")
     except Exception as e:
         print(f"❌ Failed to send reminder for {task.title}: {str(e)}")
+
+def send_due_tomorrow_reminders():
+    """Send reminders for all tasks due tomorrow."""
+    tomorrow = datetime.utcnow().date() + timedelta(days=1)
+    tasks_due_tomorrow = Task.query.filter(
+        Task.due_date == tomorrow,
+        Task.is_completed == False
+    ).all()
+
+    for task in tasks_due_tomorrow:
+        schedule_email_reminder(task) 
+
+# Initialize scheduler
+scheduler = BackgroundScheduler()
+scheduler.add_job(func=send_due_tomorrow_reminders, trigger="cron", hour=9, minute=0)  # Runs daily at 9 AM
+scheduler.start()
+atexit.register(lambda: scheduler.shutdown())
 
 # Train the RL Agent
 def train_rl_agent(user, subjects, exam_dates, episodes=1000):
