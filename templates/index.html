@@ -1,0 +1,39 @@
+<script>
+    async function generateImages() {
+        try {
+            // Read the todo_prompts.txt file first to get the total number of prompts
+            const response = await fetch('/get_todo_prompts');
+            const prompts = await response.text();
+            const totalPrompts = prompts.trim().split('\n').filter(line => line.length > 0).length;
+            
+            // Get the current number of generated images
+            const imagesResponse = await fetch('/get_generated_images_count');
+            const imageData = await imagesResponse.json();
+            const generatedCount = imageData.count;
+            
+            // If we've generated all prompts, show the alert
+            if (generatedCount >= totalPrompts) {
+                alert('All scenes have been created and downloaded successfully!');
+                return;
+            }
+            
+            // Otherwise, generate the next image
+            const generateResponse = await fetch('/generate', {
+                method: 'POST'
+            });
+            
+            if (!generateResponse.ok) {
+                throw new Error('Failed to generate image');
+            }
+            
+            const data = await generateResponse.json();
+            console.log('Generation started:', data);
+            
+        } catch (error) {
+            console.error('Error:', error);
+            alert('An error occurred while generating images');
+        }
+    }
+
+    document.getElementById('generateBtn').addEventListener('click', generateImages);
+</script> 

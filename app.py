@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, session
+from flask import Flask, render_template, request, redirect, url_for, flash, session, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timedelta
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -24,6 +24,12 @@ from flask_mail import Mail
 from apscheduler.schedulers.background import BackgroundScheduler
 # Shut down the scheduler when exiting the app
 import atexit
+import json
+from pathlib import Path
+import shutil
+
+# Initialize todo_prompts array
+todo_prompts = []
 
 load_dotenv()
 
@@ -1072,12 +1078,23 @@ def add_task():
 # Route to mark a task as completed
 @app.route('/complete_task/<int:task_id>', methods=['POST'])
 def complete_task(task_id):
-    if 'user_id' not in session:
-        return jsonify({'error': 'Please login to complete a task.'}), 401
+    try:
+        if 'user_id' not in session:
+            return jsonify({'error': 'Please login to complete a task.'}), 401
 
-    task = Task.query.get(task_id)
-    if task and task.user_id == session['user_id']:
+        task = Task.query.get(task_id)
+        if not task:
+            print(f"Task with ID {task_id} not found")
+            return jsonify({'error': 'Task not found.'}), 404
+            
+        if task.user_id != session['user_id']:
+            print(f"User {session['user_id']} attempted to complete task {task_id} owned by user {task.user_id}")
+            return jsonify({'error': 'You do not have permission to complete this task.'}), 403
+
         user = User.query.get(session['user_id'])
+        if not user:
+            print(f"User with ID {session['user_id']} not found")
+            return jsonify({'error': 'User not found.'}), 404
 
         # Initialize total_reward to 0 if it's None
         if user.total_reward is None:
@@ -1086,6 +1103,19 @@ def complete_task(task_id):
         # Mark task as completed
         task.is_completed = True
         task.date_completed = datetime.utcnow()
+
+        # Save todo text to array and file
+        try:
+            todo_text = task.title
+            todo_prompts.append(todo_text)
+            
+            # Create a file to store todo prompts if it doesn't exist
+            file_path = Path('todo_prompts.txt')
+            with open(file_path, 'a', encoding='utf-8') as f:
+                f.write(f"{todo_text}\n")
+        except Exception as e:
+            print(f"Error saving todo text: {str(e)}")
+            # Continue with the task completion even if saving the text fails
 
         # Calculate reward
         if task.due_date and task.due_date < datetime.utcnow().date():
@@ -1105,8 +1135,10 @@ def complete_task(task_id):
             'message': message,
             'total_reward': user.total_reward
         })
-    else:
-        return jsonify({'error': 'Task not found or you do not have permission.'}), 404
+    except Exception as e:
+        print(f"Error in complete_task: {str(e)}")
+        db.session.rollback()
+        return jsonify({'error': f'An error occurred: {str(e)}'}), 500
     
 # Route to delete a task
 @app.route('/delete_task/<int:task_id>', methods=['POST'])
@@ -1254,6 +1286,156 @@ def logout():
     flash('You have been logged out.', 'success')
     return redirect(url_for('login'))
 
+@app.route('/make_scene', methods=['POST'])
+def make_scene():
+    try:
+        with open('todo_prompts.txt', 'r', encoding='utf-8') as f:
+            todo_items = [line.strip() for line in f if line.strip()]
+
+        if not todo_items:
+            return jsonify({'success': False, 'error': 'No todo items found in todo_prompts.txt'})
+
+        from generate_image import generate_image_prompt, generate_image, load_history, save_history
+
+        failed_items = []
+        for todo_item in todo_items:
+            print(f"Processing: {todo_item}")
+            json_data = generate_image_prompt(todo_item)
+            
+            if json_data and "image_description" in json_data:
+                image_description = json_data["image_description"]
+                story_subtitles = json_data["story_subtitles"]
+
+                # Load existing history
+                history = load_history()
+
+                # Add new entry to history
+                history.append({
+                    "todo_item": todo_item,
+                    "image_description": image_description,
+                    "story_subtitles": story_subtitles
+                })
+
+                # Save updated history
+                save_history(history)
+
+                # Generate the image
+                generate_image(image_description)
+                print(f"Successfully processed: {todo_item}")
+            else:
+                print(f"Failed to generate image prompt for: {todo_item}")
+                failed_items.append(todo_item)
+
+        if failed_items:
+            return jsonify({
+                'success': False, 
+                'error': f'Failed to generate image prompts for: {", ".join(failed_items)}',
+                'failed_items': failed_items
+            })
+
+        # Return success with redirect URL
+        return jsonify({
+            'success': True, 
+            'message': 'Scene generation started for all todo items',
+            'redirect_url': '/results'
+        })
+    except FileNotFoundError:
+        return jsonify({'success': False, 'error': 'todo_prompts.txt file not found'})
+    except Exception as e:
+        print(f"Error in make_scene: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)})
+
+# Add these constants near the other constants
+METADATA_DIR = "metadata"
+METADATA_FILE = os.path.join(METADATA_DIR, "metadata.json")
+
+# Add these helper functions
+def load_metadata():
+    """Load metadata from the JSON file."""
+    if os.path.exists(METADATA_FILE):
+        with open(METADATA_FILE, "r") as file:
+            try:
+                return json.load(file)
+            except json.JSONDecodeError:
+                return []  # Return an empty list if the file is empty or invalid
+    return []  # Return an empty list if the file doesn't exist
+
+# Add the results route
+@app.route('/results')
+def results():
+    """Display the generated images and their metadata."""
+    generated_dir = "generated_images"
+    subtitles_file = "story_subtitles.json"
+    images_data = []
+    
+    # Load subtitles and todo items
+    try:
+        if os.path.exists(subtitles_file):
+            with open(subtitles_file, 'r', encoding='utf-8') as f:
+                subtitles_data = json.load(f)
+                # Get both subtitles and todo items in order
+                subtitles = [(item['subtitle'], item['todo_item']) for item in subtitles_data]
+        else:
+            subtitles = []
+    except Exception as e:
+        print(f"Error loading subtitles: {e}")
+        subtitles = []
+    
+    # Get all PNG files
+    image_files = [f for f in os.listdir(generated_dir) if f.endswith('.png')]
+    image_files.sort()
+    
+    # Create image data with subtitles and todo items
+    for i, file in enumerate(image_files):
+        subtitle, todo_item = subtitles[i] if i < len(subtitles) else ("No subtitle available", "No todo item available")
+        images_data.append({
+            'image_path': file,
+            'story_subtitles': subtitle,
+            'todo_item': todo_item
+        })
+    
+    return render_template('results.html', images=images_data)
+
+# Add this route to serve files from generated_images directory
+@app.route('/generated_images/<path:filename>')
+def serve_image(filename):
+    return send_from_directory('generated_images', filename)
+
+@app.route('/cleanup', methods=['POST'])
+def cleanup():
+    try:
+        # Clear generated_images directory
+        shutil.rmtree('generated_images')
+        os.makedirs('generated_images')
+        
+        # Clear story_subtitles.json
+        with open('story_subtitles.json', 'w') as f:
+            json.dump([], f)
+            
+        # Clear todo_prompts.txt
+        with open('todo_prompts.txt', 'w') as f:
+            f.write('')  # Write an empty string to clear the file
+            
+        return jsonify({'success': True, 'redirect': '/home'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/get_todo_prompts')
+def get_todo_prompts():
+    try:
+        with open('todo_prompts.txt', 'r') as f:
+            return f.read()
+    except FileNotFoundError:
+        return ''
+
+@app.route('/get_generated_images_count')
+def get_generated_images_count():
+    try:
+        # Count PNG files in the generated_images directory
+        count = len([f for f in os.listdir('generated_images') if f.endswith('.png')])
+        return jsonify({'count': count})
+    except Exception as e:
+        return jsonify({'count': 0})
 
 if __name__ == '__main__':
     init_db()  # Initialize database

@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scenes</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .slideshow-container {
+            max-width: 600px;
+            position: relative;
+            margin: auto;
+            padding: 15px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            border-radius: 8px;
+        }
+        .slide {
+            display: none;
+            text-align: center;
+        }
+        .slide.active {
+            display: block;
+        }
+        .slide img {
+            max-width: 100%;
+            height: auto;
+            max-height: 400px;
+            object-fit: contain;
+            margin: 0 auto;
+        }
+        .todo-name {
+            padding: 8px;
+            margin-bottom: 10px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+            text-align: center;
+            font-weight: bold;
+            color: #333;
+            font-size: 0.95em;
+        }
+        .image-counter {
+            text-align: center;
+            margin: 8px 0;
+            color: #666;
+            font-size: 0.9em;
+        }
+        .subtitle-text {
+            padding: 12px;
+            margin: 8px 0;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+            text-align: center;
+            font-size: 0.95em;
+        }
+        .carousel-buttons {
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+            padding: 15px;
+        }
+        .carousel-button {
+            padding: 8px 16px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            font-size: 0.9em;
+        }
+        .carousel-button:hover {
+            background-color: #0056b3;
+        }
+        .back-button {
+            display: inline-block;
+            padding: 10px 20px;
+            background-color: #007bff;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        @media (max-width: 768px) {
+            .slideshow-container {
+                max-width: 95%;
+                padding: 10px;
+            }
+            .slide img {
+                max-height: 350px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/home" class="back-button">← Back to Home</a>
+        <h1>Generated Images</h1>
+        
+        <div class="slideshow-container">
+            <div class="slides">
+                {% for image in images %}
+                <div class="slide {% if loop.first %}active{% endif %}">
+                    <div class="todo-name">{{ image.todo_item if image.todo_item else "No todo item available" }}</div>
+                    <img src="{{ url_for('serve_image', filename=image.image_path) }}" alt="Generated Image">
+                    <div class="image-counter">Image {{ loop.index }} of {{ images|length }}</div>
+                    <div class="subtitle-text">{{ image.story_subtitles }}</div>
+                </div>
+                {% endfor %}
+            </div>
+            
+            <div class="carousel-buttons">
+                <button class="carousel-button" id="prevBtn">Previous</button>
+                <button class="carousel-button" id="finishedBtn">Finished</button>
+                <button class="carousel-button" id="nextBtn">Next</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentSlide = 0;
+        const slides = document.querySelectorAll('.slide');
+
+        function showSlide(n) {
+            // Remove active class from all slides
+            slides.forEach(slide => slide.classList.remove('active'));
+            
+            // Update current slide index
+            currentSlide = (n + slides.length) % slides.length;
+            
+            // Add active class to current slide
+            slides[currentSlide].classList.add('active');
+        }
+
+        document.getElementById('prevBtn').addEventListener('click', () => {
+            showSlide(currentSlide - 1);
+        });
+
+        document.getElementById('nextBtn').addEventListener('click', () => {
+            showSlide(currentSlide + 1);
+        });
+
+        // Initialize first slide
+        showSlide(0);
+
+        // Add event listener for the Finished button
+        document.getElementById('finishedBtn').addEventListener('click', async function() {
+            try {
+                const response = await fetch('/cleanup', {
+                    method: 'POST',
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    window.location.href = data.redirect;
+                } else {
+                    console.error('Cleanup failed:', data.error);
+                    alert('Failed to cleanup. Please try again.');
+                }
+            } catch (error) {
+                console.error('Error during cleanup:', error);
+                alert('An error occurred. Please try again.');
+            }
+        });
+    </script>
+</body>
+</html> 

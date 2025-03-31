@@ -130,6 +130,16 @@
             {% else %}
                 <p>No RL-optimized study plan tasks found. <a href="{{ url_for('exam_dashboard') }}" class="btn-create-plan">Go to Exam Dashboard</a> to create a study plan.</p>
             {% endif %}
+
+            <!-- Make Scene and Show Scene Buttons -->
+            <div class="make-scene-container" style="margin-top: 30px; text-align: center;">
+                <button id="make-scene-btn" class="btn-create-plan" style="padding: 15px 30px; font-size: 1.2em;">
+                    Make Scene
+                </button>
+                <a href="/results" class="btn-create-plan" style="padding: 15px 30px; font-size: 1.2em; margin-left: 20px; text-decoration: none;">
+                    Show Scene
+                </a>
+            </div>
         </div>
     </div>
 
@@ -189,6 +199,53 @@
                 event.preventDefault(); // Prevent the form from submitting
                 const taskId = this.closest('form').action.split('/').pop(); // Extract task ID from form action
                 completeTask(taskId, this); // Call the completeTask function and pass the button element
+            });
+        });
+
+        // Handle Make Scene button click
+        document.getElementById('make-scene-btn').addEventListener('click', function() {
+            // Show loading message
+            alert('Starting image generation. You will be redirected to the results page once the images are downloaded.');
+            
+            // Start polling for webhook response
+            const pollInterval = setInterval(() => {
+                fetch('/webhook', {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if ((data.status === 'COMPLETED' || data.status === 'success') && data.redirect_url) {
+                        clearInterval(pollInterval); // Stop polling
+                        window.location.href = data.redirect_url; // Redirect to results page
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    clearInterval(pollInterval); // Stop polling on error
+                });
+            }, 2000); // Poll every 2 seconds
+
+            // Start the image generation process
+            fetch('/make_scene', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (!data.success) {
+                    clearInterval(pollInterval); // Stop polling on error
+                    alert('Error: ' + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                clearInterval(pollInterval); // Stop polling on error
+                alert('An error occurred while generating scenes.');
             });
         });
     </script>

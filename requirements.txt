@@ -1,0 +1,44 @@
+# Web Framework and Extensions
+Flask==3.0.0
+Flask-SQLAlchemy==3.1.1
+Flask-Admin==1.6.1
+Flask-Session==0.5.0
+Flask-Mail==0.9.1
+Flask-Migrate==4.0.5
+Flask-CORS==4.0.0
+Werkzeug==3.0.1
+
+# Database
+SQLAlchemy==2.0.25
+psycopg2-binary==2.9.9  # PostgreSQL adapter
+
+# API and HTTP
+requests==2.31.0
+
+# Date and Time Handling
+python-dateutil==2.8.2
+dateparser==1.2.0
+
+# Task Scheduling
+APScheduler==3.10.4
+
+# Environment Variables
+python-dotenv==1.0.0
+
+# Google AI
+google-generativeai==0.3.2
+
+# Data Processing
+numpy==1.26.3
+
+# Speech Recognition
+SpeechRecognition==3.10.0
+
+# Email Support
+email-validator==2.1.0.post1
+
+# File System Operations
+pathlib==1.0.1
+
+# Development and Debug Tools
+python-dotenv==1.0.0 
